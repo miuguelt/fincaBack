@@ -181,3 +181,5 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+endpoint_test_report.json
+test_endpoints.py

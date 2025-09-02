@@ -6,6 +6,7 @@ from app.models.breeds import Breeds
 from flask_restx import fields
 from app import db
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from datetime import datetime
 import logging
 
@@ -61,7 +62,12 @@ animal_response_model = animals_ns.model('AnimalResponse', {
 
 animal_list_response_model = animals_ns.model('AnimalListResponse', {
     'animals': fields.List(fields.Nested(animal_response_model), description='Lista de animales'),
-    'total': fields.Integer(description='Total de animales')
+    'total': fields.Integer(description='Total de animales'),
+    'page': fields.Integer(description='Página actual'),
+    'per_page': fields.Integer(description='Elementos por página'),
+    'pages': fields.Integer(description='Total de páginas'),
+    'has_next': fields.Boolean(description='Hay página siguiente'),
+    'has_prev': fields.Boolean(description='Hay página anterior')
 })
 
 success_message_model = animals_ns.model('SuccessMessage', {
@@ -117,7 +123,9 @@ class AnimalList(Resource):
             'sex': {'description': 'Filtrar por sexo', 'type': 'string', 'enum': ['Hembra', 'Macho']},
             'status': {'description': 'Filtrar por estado', 'type': 'string', 'enum': ['Vivo', 'Vendido', 'Muerto']},
             'min_weight': {'description': 'Peso mínimo en kg', 'type': 'integer'},
-            'max_weight': {'description': 'Peso máximo en kg', 'type': 'integer'}
+            'max_weight': {'description': 'Peso máximo en kg', 'type': 'integer'},
+            'page': {'description': 'Número de página (default: 1)', 'type': 'integer'},
+            'per_page': {'description': 'Elementos por página (default: 50, max: 100)', 'type': 'integer'}
         },
         responses={
             200: ('Lista de animales', animal_list_response_model),
@@ -131,7 +139,10 @@ class AnimalList(Resource):
     def get(self):
         """Obtener inventario de animales con filtros opcionales"""
         try:
-            query = Animals.query
+            # Optimización: Usar eager loading para evitar consultas N+1
+            query = Animals.query.options(
+                joinedload(Animals.breed).joinedload('species')
+            )
             
             # Aplicar filtros
             record = request.args.get('record')
@@ -178,11 +189,25 @@ class AnimalList(Resource):
                 except ValueError:
                     animals_ns.abort(400, 'max_weight debe ser un número entero')
             
-            animals = query.all()
+            # Paginación
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 50, type=int), 100)  # Máximo 100 por página
+            
+            # Ejecutar consulta paginada
+            pagination = query.paginate(
+                page=page,
+                per_page=per_page,
+                error_out=False
+            )
             
             return {
-                'animals': [animal.to_json() for animal in animals],
-                'total': len(animals)
+                'animals': [animal.to_json() for animal in pagination.items],
+                'total': pagination.total,
+                'page': pagination.page,
+                'per_page': pagination.per_page,
+                'pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev
             }
             
         except Exception as e:
@@ -364,7 +389,10 @@ class AnimalDetail(Resource):
     def get(self, animal_id):
         """Obtener animal por ID"""
         try:
-            animal = Animals.query.get(animal_id)
+            # Optimización: Usar eager loading para evitar consultas N+1
+            animal = Animals.query.options(
+                joinedload(Animals.breed).joinedload('species')
+            ).get(animal_id)
             if not animal:
                 animals_ns.abort(404, 'Animal no encontrado')
             
