@@ -245,6 +245,7 @@ def create_app(config_name='production'):
             
             # Documentación
             '/api-documentation',
+            '/docs',
             '/docs/',
             '/docs/interactive',
             '/docs/tester',

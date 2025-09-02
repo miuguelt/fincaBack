@@ -565,7 +565,7 @@ class AnimalDetail(Resource):
             animals_ns.abort(500, f'Error interno del servidor: {str(e)}')
 
 @animals_ns.route('/status')
-class AnimalStatus(Resource):
+class AnimalStatusStats(Resource):
     @animals_ns.doc(
         'get_animal_status',
         description='''
