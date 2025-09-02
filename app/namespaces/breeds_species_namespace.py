@@ -15,6 +15,7 @@ from app.utils.validators import (
 from app.utils.cache_manager import (
     cache_query_result, invalidate_cache_on_change, QueryOptimizer
 )
+from app.utils.etag_cache import etag_cache, conditional_cache
 
 # Crear el namespace
 breeds_species_ns = Namespace(
@@ -94,7 +95,7 @@ class SpeciesList(Resource):
         }
     )
     @PerformanceLogger.log_request_performance
-    @cache_query_result("species_list", ttl_seconds=1800)  # 30 minutos
+    @etag_cache('species', cache_timeout=1800)  # 30 minutos
     @jwt_required()
     def get(self):
         """Obtener lista de especies"""
@@ -451,7 +452,7 @@ class BreedsList(Resource):
         }
     )
     @PerformanceLogger.log_request_performance
-    @cache_query_result("breeds_list", ttl_seconds=1800)
+    @conditional_cache(['breeds', 'species'], cache_timeout=1800)  # 30 minutos
     @jwt_required()
     def get(self):
         """Obtener lista de razas con paginación y filtros"""

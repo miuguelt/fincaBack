@@ -3,12 +3,14 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.animals import Animals, Sex, AnimalStatus
 from app.models.breeds import Breeds
+from app.models.species import Species
 from flask_restx import fields
 from app import db
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from datetime import datetime
 import logging
+from app.utils.etag_cache import etag_cache, conditional_cache
 
 # Crear el namespace
 animals_ns = Namespace(
@@ -135,13 +137,14 @@ class AnimalList(Resource):
         }
     )
     @animals_ns.marshal_with(animal_list_response_model)
+    @etag_cache('animals', cache_timeout=300)  # Caché de 5 minutos
     @jwt_required()
     def get(self):
         """Obtener inventario de animales con filtros opcionales"""
         try:
             # Optimización: Usar eager loading para evitar consultas N+1
             query = Animals.query.options(
-                joinedload(Animals.breed).joinedload('species')
+                joinedload(Animals.breed).joinedload(Breeds.species)
             )
             
             # Aplicar filtros
@@ -391,7 +394,7 @@ class AnimalDetail(Resource):
         try:
             # Optimización: Usar eager loading para evitar consultas N+1
             animal = Animals.query.options(
-                joinedload(Animals.breed).joinedload('species')
+                joinedload(Animals.breed).joinedload(Breeds.species)
             ).get(animal_id)
             if not animal:
                 animals_ns.abort(404, 'Animal no encontrado')
