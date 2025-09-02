@@ -2,11 +2,17 @@
 import os
 from dotenv import load_dotenv
 
-# Cargar variables de entorno desde el archivo .env
-load_dotenv()
+# Detectar entorno y cargar el archivo .env apropiado
+flask_env = os.getenv('FLASK_ENV')
+if flask_env == 'production':
+    load_dotenv('.env.production')
+    config_name = 'production'
+else:
+    load_dotenv()  # Carga .env por defecto
+    config_name = os.getenv('FLASK_ENV', 'development')
 
 from app import create_app, db
-app = create_app()
+app = create_app(config_name)
 
 with app.app_context():
     db.create_all()

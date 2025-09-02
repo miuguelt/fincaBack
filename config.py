@@ -32,8 +32,8 @@ class Config:
         "http://localhost:5175",
         "https://localhost:3000",
         "http://localhost:3000",
-        "https://mifinca.isladigital.xyz",
-        "https://mifican.isldigital.xya"
+        "https://finca.isladigital.xyz",
+        "https://mifinca.isladigital.xyz"
     ]
 
     # Nivel de logging por defecto
@@ -41,26 +41,26 @@ class Config:
     LOG_FILE_ENABLED = False
     
     # URLs base para APIs y frontend
-    API_BASE_URL = os.getenv('API_BASE_URL', 'https://localhost:8081/api/v1')
-    API_HOST = os.getenv('API_HOST', 'localhost')
-    API_PORT = os.getenv('API_PORT', '8081')
+    API_BASE_URL = os.getenv('API_BASE_URL', 'https://finca.isladigital.xyz/api/v1')
+    API_HOST = os.getenv('API_HOST', 'finca.isladigital.xyz')
+    API_PORT = os.getenv('API_PORT', '443')
     API_PROTOCOL = os.getenv('API_PROTOCOL', 'https')
     
     # URLs para frontend y backend
-    FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://localhost:5175')
-    FRONTEND_HOST = os.getenv('FRONTEND_HOST', 'localhost')
-    FRONTEND_PORT = os.getenv('FRONTEND_PORT', '5175')
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://finca.isladigital.xyz')
+    FRONTEND_HOST = os.getenv('FRONTEND_HOST', 'finca.isladigital.xyz')
+    FRONTEND_PORT = os.getenv('FRONTEND_PORT', '443')
     FRONTEND_PROTOCOL = os.getenv('FRONTEND_PROTOCOL', 'https')
     
-    BACKEND_URL = os.getenv('BACKEND_URL', 'https://localhost:8081')
-    BACKEND_HOST = os.getenv('BACKEND_HOST', 'localhost')
-    BACKEND_PORT = os.getenv('BACKEND_PORT', '8081')
+    BACKEND_URL = os.getenv('BACKEND_URL', 'https://finca.isladigital.xyz')
+    BACKEND_HOST = os.getenv('BACKEND_HOST', 'finca.isladigital.xyz')
+    BACKEND_PORT = os.getenv('BACKEND_PORT', '443')
     BACKEND_PROTOCOL = os.getenv('BACKEND_PROTOCOL', 'https')
     
     # URLs adicionales
-    API_BASE_URL_NO_VERSION = os.getenv('API_BASE_URL_NO_VERSION', 'https://localhost:8081')
-    API_DOCS_URL = os.getenv('API_DOCS_URL', 'https://localhost:8081/docs')
-    API_SWAGGER_URL = os.getenv('API_SWAGGER_URL', 'https://localhost:8081/swagger.json')
+    API_BASE_URL_NO_VERSION = os.getenv('API_BASE_URL_NO_VERSION', 'https://finca.isladigital.xyz')
+    API_DOCS_URL = os.getenv('API_DOCS_URL', 'https://finca.isladigital.xyz/docs')
+    API_SWAGGER_URL = os.getenv('API_SWAGGER_URL', 'https://finca.isladigital.xyz/swagger.json')
 
 class DevelopmentConfig(Config):
     """Configuración para desarrollo (localhost)."""
@@ -127,8 +127,8 @@ class ProductionConfig(Config):
     # Incluye el dominio y el subdominio si tu frontend está en un subdominio
     CORS_ORIGINS = [
         "https://isladigital.xyz", 
+        "https://finca.isladigital.xyz",
         "https://mifinca.isladigital.xyz",
-        "https://mifican.isldigital.xya",
         "https://localhost:5173", 
         "http://localhost:5173",
         "https://localhost:3000",
