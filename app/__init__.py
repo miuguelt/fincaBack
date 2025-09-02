@@ -381,6 +381,20 @@ def create_app(config_name='production'):
 
     app.register_blueprint(api_bp)
     
+    # Ruta global para documentación
+    @app.route('/docs')
+    @app.route('/docs/')
+    def docs_redirect():
+        """Redirigir a la documentación de la API"""
+        from flask import redirect
+        return redirect('/api/v1/docs/', code=302)
+    
+    @app.route('/swagger.json')
+    def swagger_redirect():
+        """Redirigir al JSON de Swagger"""
+        from flask import redirect
+        return redirect('/api/v1/swagger.json', code=302)
+    
     # ====================================================================
     # DOCUMENTACIÓN: Flask-RESTX genera automáticamente la documentación
     # Swagger en /swagger.json y la interfaz interactiva en /docs/
