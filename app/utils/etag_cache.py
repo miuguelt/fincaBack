@@ -130,11 +130,13 @@ def etag_cache(table_name: str, cache_timeout: int = 300):
                 # Generar nuevo ETag
                 new_etag = cache_manager._generate_etag(data, table_name)
                 
-                # Crear respuesta con ETag
-                response = make_response(jsonify(data), status_code)
-                response.headers['ETag'] = new_etag
-                response.headers['Cache-Control'] = f'max-age={cache_timeout}'
-                response.headers['Last-Modified'] = cache_manager._get_table_last_modified(table_name).strftime('%a, %d %b %Y %H:%M:%S GMT')
+                # Agregar headers de caché a la respuesta de Flask
+                from flask import g
+                g.etag_headers = {
+                    'ETag': new_etag,
+                    'Cache-Control': f'max-age={cache_timeout}',
+                    'Last-Modified': cache_manager._get_table_last_modified(table_name).strftime('%a, %d %b %Y %H:%M:%S GMT')
+                }
                 
                 # Guardar en caché
                 cache_manager._etag_cache[new_etag] = {
@@ -144,7 +146,9 @@ def etag_cache(table_name: str, cache_timeout: int = 300):
                 }
                 
                 logger.info(f"Cache SET: {table_name} - Nuevo ETag: {new_etag[:8]}...")
-                return response
+                
+                # Devolver solo los datos para que marshal_with funcione
+                return result
                 
             except Exception as e:
                 logger.error(f"Error en endpoint cacheado {table_name}: {e}")
@@ -199,19 +203,25 @@ def conditional_cache(table_names: list, cache_timeout: int = 300):
                 combined_table_name = '_'.join(sorted(table_names))
                 new_etag = cache_manager._generate_etag(data, combined_table_name)
                 
-                response = make_response(jsonify(data), status_code)
-                response.headers['ETag'] = new_etag
-                response.headers['Cache-Control'] = f'max-age={cache_timeout}'
+                # Agregar headers de caché a la respuesta de Flask
+                from flask import g
                 
                 # Usar el timestamp más reciente de todas las tablas
                 latest_timestamp = max(
                     cache_manager._get_table_last_modified(table) 
                     for table in table_names
                 )
-                response.headers['Last-Modified'] = latest_timestamp.strftime('%a, %d %b %Y %H:%M:%S GMT')
+                
+                g.etag_headers = {
+                    'ETag': new_etag,
+                    'Cache-Control': f'max-age={cache_timeout}',
+                    'Last-Modified': latest_timestamp.strftime('%a, %d %b %Y %H:%M:%S GMT')
+                }
                 
                 logger.info(f"Cache SET: {table_names} - Nuevo ETag: {new_etag[:8]}...")
-                return response
+                
+                # Devolver solo los datos para que marshal_with funcione
+                return result
                 
             except Exception as e:
                 logger.error(f"Error en endpoint cacheado {table_names}: {e}")

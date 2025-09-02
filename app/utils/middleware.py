@@ -73,6 +73,12 @@ class RequestMiddleware:
             response.headers['X-Response-Time'] = f"{response_time}ms"
             response.headers['X-API-Version'] = '1.0'
             
+            # Agregar headers ETag si están disponibles
+            etag_headers = getattr(g, 'etag_headers', None)
+            if etag_headers:
+                for header_name, header_value in etag_headers.items():
+                    response.headers[header_name] = header_value
+            
             # Log del final del request
             logger.info(
                 f"[{getattr(g, 'request_id', 'unknown')}] REQUEST END: "
