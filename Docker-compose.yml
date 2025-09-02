@@ -1,0 +1,13 @@
+services:
+  app:
+    image: 'python:3.12-alpine'
+    build:
+      context: 'https://github.com/miuguelt/fincaVillaLuz-main.git#main'
+      dockerfile: Dockerfile
+    ports:
+      - '3000:8081'
+    networks:
+      - app-network
+networks:
+  app-network:
+    driver: bridge

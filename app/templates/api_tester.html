@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finca Villa Luz - Probador de API</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2c5530;
+            --secondary-color: #4a7c59;
+            --accent-color: #7fb069;
+            --light-green: #d6eadf;
+            --dark-text: #2d3436;
+            --light-text: #636e72;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--light-green) 0%, #ffffff 100%);
+            color: var(--dark-text);
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 2rem;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, var(--accent-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 1.5rem;
+        }
+
+        .method-badge {
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .method-get { background-color: #28a745; color: white; }
+        .method-post { background-color: #007bff; color: white; }
+        .method-put { background-color: #ffc107; color: black; }
+        .method-delete { background-color: #dc3545; color: white; }
+
+        .status-code {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-size: 1rem;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        .status-200 { background-color: #d4edda; color: #155724; }
+        .status-201 { background-color: #d1ecf1; color: #0c5460; }
+        .status-400 { background-color: #f8d7da; color: #721c24; }
+        .status-401 { background-color: #f5c6cb; color: #721c24; }
+        .status-403 { background-color: #f5c6cb; color: #721c24; }
+        .status-404 { background-color: #f8d7da; color: #721c24; }
+        .status-409 { background-color: #fff3cd; color: #856404; }
+        .status-500 { background-color: #f8d7da; color: #721c24; }
+
+        .json-viewer {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 1.5rem;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .endpoint-selector {
+            background-color: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            margin-bottom: 2rem;
+        }
+
+        .btn-test {
+            background: linear-gradient(135deg, var(--accent-color) 0%, var(--secondary-color) 100%);
+            border: none;
+            color: white;
+            padding: 0.75rem 2rem;
+            border-radius: 25px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .btn-test:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            color: white;
+        }
+
+        .loading {
+            display: none;
+        }
+
+        .loading.show {
+            display: inline-block;
+        }
+
+        .token-input {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .response-container {
+            display: none;
+        }
+
+        .response-container.show {
+            display: block;
+        }
+
+        .quick-actions {
+            background-color: var(--light-green);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .preset-btn {
+            margin: 0.25rem;
+            border-radius: 15px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-vial me-2"></i>
+                Probador de API - Finca Villa Luz
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/docs/">📚 Documentación</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Token Configuration -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-key me-2"></i>Configuración de Autenticación</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <label for="authToken" class="form-label">Token JWT (opcional para endpoints públicos)</label>
+                        <input type="text" class="form-control token-input" id="authToken" 
+                               placeholder="Pega aquí tu token JWT o usa el botón de login">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button class="btn btn-outline-primary me-2" onclick="testLogin()">🔑 Hacer Login</button>
+                        <button class="btn btn-outline-secondary" onclick="clearToken()">🗑️ Limpiar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <h6><i class="fas fa-bolt me-2"></i>Acciones Rápidas</h6>
+            <button class="btn btn-sm btn-outline-primary preset-btn" onclick="loadPreset('login')">Login</button>
+            <button class="btn btn-sm btn-outline-success preset-btn" onclick="loadPreset('getUsers')">Listar Usuarios</button>
+            <button class="btn btn-sm btn-outline-info preset-btn" onclick="loadPreset('getAnimals')">Listar Animales</button>
+            <button class="btn btn-sm btn-outline-warning preset-btn" onclick="loadPreset('createUser')">Crear Usuario</button>
+            <button class="btn btn-sm btn-outline-danger preset-btn" onclick="loadPreset('createAnimal')">Crear Animal</button>
+        </div>
+
+        <!-- API Tester -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-play-circle me-2"></i>Probador de Endpoints</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label for="httpMethod" class="form-label">Método HTTP</label>
+                        <select class="form-select" id="httpMethod">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                        </select>
+                    </div>
+                    <div class="col-md-9">
+                        <label for="endpoint" class="form-label">Endpoint URL</label>
+                        <div class="input-group">
+                            <span class="input-group-text" id="baseUrlDisplay">{{ config.get('API_BASE_URL', 'https://localhost:8081').replace('/api/v1', '') }}</span>
+                            <input type="text" class="form-control" id="endpoint" 
+                                   placeholder="/api/v1/auth/login" value="/api/v1/auth/login">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <label for="requestBody" class="form-label">Cuerpo de la Petición (JSON)</label>
+                        <textarea class="form-control" id="requestBody" rows="8" 
+                                  placeholder='{
+  "identification": 12345678,
+  "password": "password123"
+}'></textarea>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <button class="btn btn-test" onclick="makeRequest()">
+                            <i class="fas fa-paper-plane me-2"></i>Enviar Petición
+                            <span class="loading ms-2">
+                                <i class="fas fa-spinner fa-spin"></i>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Container -->
+        <div class="response-container" id="responseContainer">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-reply me-2"></i>Respuesta del Servidor</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>Código de Estado:</strong>
+                        <span id="statusCode" class="status-code"></span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Headers de Respuesta:</strong>
+                        <div id="responseHeaders" class="json-viewer"></div>
+                    </div>
+                    <div>
+                        <strong>Cuerpo de la Respuesta:</strong>
+                        <div id="responseBody" class="json-viewer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Presets de configuración
+        const presets = {
+            login: {
+                method: 'POST',
+                endpoint: '/api/v1/auth/login',
+                body: JSON.stringify({
+                    "identification": 12345678,
+                    "password": "password123"
+                }, null, 2)
+            },
+            getUsers: {
+                method: 'GET',
+                endpoint: '/api/v1/users/',
+                body: ''
+            },
+            getAnimals: {
+                method: 'GET',
+                endpoint: '/api/v1/animals/',
+                body: ''
+            },
+            createUser: {
+                method: 'POST',
+                endpoint: '/api/v1/users/',
+                body: JSON.stringify({
+                    "identification": 87654321,
+                    "fullname": "María García",
+                    "password": "password123",
+                    "email": "maria@example.com",
+                    "phone": "3001234567",
+                    "address": "Calle 123 #45-67",
+                    "role": "Instructor",
+                    "status": true
+                }, null, 2)
+            },
+            createAnimal: {
+                method: 'POST',
+                endpoint: '/api/v1/animals/',
+                body: JSON.stringify({
+                    "sex": "Hembra",
+                    "birth_date": "2023-06-15",
+                    "weight": 380,
+                    "record": "BOV-002-2023",
+                    "status": "Vivo",
+                    "breeds_id": 1
+                }, null, 2)
+            }
+        };
+
+        function loadPreset(presetName) {
+            const preset = presets[presetName];
+            if (preset) {
+                document.getElementById('httpMethod').value = preset.method;
+                document.getElementById('endpoint').value = preset.endpoint;
+                document.getElementById('requestBody').value = preset.body;
+            }
+        }
+
+        function clearToken() {
+            document.getElementById('authToken').value = '';
+        }
+
+        async function testLogin() {
+            const loginData = {
+                identification: 12345678,
+                password: "password123"
+            };
+
+            try {
+                const baseUrl = document.getElementById('baseUrlDisplay').textContent;
+                const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(loginData)
+                });
+
+                const data = await response.json();
+                
+                if (response.ok && data.access_token) {
+                    document.getElementById('authToken').value = data.access_token;
+                    alert('✅ Login exitoso! Token guardado automáticamente.');
+                } else {
+                    alert('❌ Error en login: ' + (data.message || 'Error desconocido'));
+                }
+            } catch (error) {
+                alert('❌ Error de conexión: ' + error.message);
+            }
+        }
+
+        async function makeRequest() {
+            const method = document.getElementById('httpMethod').value;
+            const endpoint = document.getElementById('endpoint').value;
+            const requestBody = document.getElementById('requestBody').value;
+            const authToken = document.getElementById('authToken').value;
+
+            // Mostrar loading
+            const loading = document.querySelector('.loading');
+            loading.classList.add('show');
+
+            // Preparar headers
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+
+            // Preparar opciones de la petición
+            const options = {
+                method: method,
+                headers: headers
+            };
+
+            if (method !== 'GET' && requestBody.trim()) {
+                try {
+                    JSON.parse(requestBody); // Validar JSON
+                    options.body = requestBody;
+                } catch (e) {
+                    alert('❌ Error: El cuerpo de la petición no es un JSON válido');
+                    loading.classList.remove('show');
+                    return;
+                }
+            }
+
+            try {
+                const baseUrl = document.getElementById('baseUrlDisplay').textContent;
+                const response = await fetch(`${baseUrl}${endpoint}`, options);
+                
+                // Obtener headers de respuesta
+                const responseHeaders = {};
+                response.headers.forEach((value, key) => {
+                    responseHeaders[key] = value;
+                });
+
+                // Obtener cuerpo de respuesta
+                let responseData;
+                const contentType = response.headers.get('content-type');
+                
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await response.json();
+                } else {
+                    responseData = await response.text();
+                }
+
+                // Mostrar respuesta
+                displayResponse(response.status, responseHeaders, responseData);
+
+            } catch (error) {
+                displayResponse(0, {}, {
+                    error: 'Error de conexión',
+                    message: error.message
+                });
+            } finally {
+                loading.classList.remove('show');
+            }
+        }
+
+        function displayResponse(status, headers, body) {
+            const container = document.getElementById('responseContainer');
+            const statusElement = document.getElementById('statusCode');
+            const headersElement = document.getElementById('responseHeaders');
+            const bodyElement = document.getElementById('responseBody');
+
+            // Mostrar código de estado
+            statusElement.textContent = status;
+            statusElement.className = `status-code status-${Math.floor(status / 100) * 100}`;
+            
+            if (status === 0) {
+                statusElement.className = 'status-code status-500';
+                statusElement.textContent = 'Error de Conexión';
+            }
+
+            // Mostrar headers
+            headersElement.textContent = JSON.stringify(headers, null, 2);
+
+            // Mostrar cuerpo de respuesta con sugerencias para errores comunes
+            let displayBody = body;
+            if (typeof body === 'object') {
+                // Agregar sugerencias para errores de autenticación
+                if (status === 401 && body.msg && body.msg.includes('Missing or invalid token')) {
+                    displayBody = {
+                        ...body,
+                        "💡 Sugerencia": "Este endpoint requiere autenticación. Usa el botón 'Hacer Login' para obtener un token automáticamente, o pega tu token JWT en el campo de autenticación.",
+                        "🔧 Solución rápida": "1. Haz clic en 'Hacer Login' arriba, 2. Luego vuelve a enviar esta petición"
+                    };
+                }
+                // Sugerencias para otros errores comunes
+                else if (status === 403) {
+                    displayBody = {
+                        ...body,
+                        "💡 Sugerencia": "Este endpoint requiere permisos de Administrador. Asegúrate de estar autenticado con un usuario que tenga el rol 'Administrador'."
+                    };
+                }
+                else if (status === 404) {
+                    displayBody = {
+                        ...body,
+                        "💡 Sugerencia": "El recurso no fue encontrado. Verifica que el ID existe o que la URL del endpoint sea correcta."
+                    };
+                }
+                else if (status === 409) {
+                    displayBody = {
+                        ...body,
+                        "💡 Sugerencia": "Error de integridad. Esto suele ocurrir cuando intentas crear un registro con datos que ya existen (ej: email duplicado) o eliminar un registro que tiene dependencias."
+                    };
+                }
+                bodyElement.textContent = JSON.stringify(displayBody, null, 2);
+            } else {
+                bodyElement.textContent = body;
+            }
+
+            // Mostrar contenedor de respuesta
+            container.classList.add('show');
+
+            // Scroll hacia la respuesta
+            container.scrollIntoView({ behavior: 'smooth' });
+
+            // Mostrar alerta para errores de autenticación
+            if (status === 401 && body.msg && body.msg.includes('Missing or invalid token')) {
+                setTimeout(() => {
+                    if (confirm('❌ Error de autenticación detectado.\n\n¿Quieres hacer login automáticamente para obtener un token?')) {
+                        testLogin();
+                    }
+                }, 500);
+            }
+        }
+
+        // Cargar preset de login por defecto
+        loadPreset('login');
+    </script>
+</body>
+</html>

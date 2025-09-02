@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finca Villa Luz - Documentación API</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2c5530;
+            --secondary-color: #4a7c59;
+            --accent-color: #7fb069;
+            --light-green: #d6eadf;
+            --dark-text: #2d3436;
+            --light-text: #636e72;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--light-green) 0%, #ffffff 100%);
+            color: var(--dark-text);
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+
+        .hero-section {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 4rem 0;
+            margin-bottom: 2rem;
+        }
+
+        .hero-section h1 {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+
+        .hero-section p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-bottom: 2rem;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, var(--accent-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 1.5rem;
+        }
+
+        .endpoint-card {
+            border-left: 4px solid var(--accent-color);
+            margin-bottom: 1.5rem;
+        }
+
+        .method-badge {
+            font-weight: bold;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .method-get { background-color: #28a745; color: white; }
+        .method-post { background-color: #007bff; color: white; }
+        .method-put { background-color: #ffc107; color: black; }
+        .method-delete { background-color: #dc3545; color: white; }
+
+        .status-code {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            padding: 0.25rem 0.5rem;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+
+        .status-200 { background-color: #d4edda; color: #155724; }
+        .status-201 { background-color: #d1ecf1; color: #0c5460; }
+        .status-400 { background-color: #f8d7da; color: #721c24; }
+        .status-401 { background-color: #f5c6cb; color: #721c24; }
+        .status-403 { background-color: #f5c6cb; color: #721c24; }
+        .status-404 { background-color: #f8d7da; color: #721c24; }
+        .status-409 { background-color: #fff3cd; color: #856404; }
+        .status-500 { background-color: #f8d7da; color: #721c24; }
+
+        .code-block {
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 1.5rem;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        .nav-pills .nav-link {
+            border-radius: 25px;
+            margin-right: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .nav-pills .nav-link.active {
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        .nav-pills .nav-link:not(.active) {
+            color: var(--secondary-color);
+            background-color: var(--light-green);
+        }
+
+        .nav-pills .nav-link:not(.active):hover {
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        .section-title {
+            color: var(--primary-color);
+            font-weight: bold;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 3px solid var(--accent-color);
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            color: var(--accent-color);
+            margin-bottom: 1rem;
+        }
+
+        .sidebar {
+            background-color: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 2rem;
+        }
+
+        .sidebar .nav-link {
+            color: var(--dark-text);
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background-color: var(--light-green);
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+            .hero-section h1 {
+                font-size: 2rem;
+            }
+            
+            .sidebar {
+                position: static;
+                margin-bottom: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-cow me-2"></i>
+                Finca Villa Luz API
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#overview">Resumen</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#authentication">Autenticación</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#endpoints">Endpoints</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#examples">Ejemplos</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section" id="overview">
+        <div class="container text-center">
+            <h1><i class="fas fa-api me-3"></i>API Documentation</h1>
+            <p class="lead">Sistema de gestión ganadera con arquitectura RESTful moderna</p>
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="feature-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <h5>Seguridad JWT</h5>
+                    <p>Autenticación robusta con tokens JWT</p>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <h5>Base de Datos</h5>
+                    <p>Gestión completa del inventario ganadero</p>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-icon">
+                        <i class="fas fa-code"></i>
+                    </div>
+                    <h5>RESTful API</h5>
+                    <p>Endpoints estándar y bien documentados</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <div class="container">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-lg-3">
+                <div class="sidebar">
+                    <h6 class="text-muted mb-3">NAVEGACIÓN</h6>
+                    <nav class="nav flex-column">
+                        <a class="nav-link active" href="#overview">Resumen General</a>
+                        <a class="nav-link" href="#authentication">Autenticación</a>
+                        <a class="nav-link" href="#users">Gestión de Usuarios</a>
+                        <a class="nav-link" href="#animals">Gestión de Animales</a>
+                        <a class="nav-link" href="#health">Salud Animal</a>
+                        <a class="nav-link" href="#examples">Ejemplos de Uso</a>
+                        <a class="nav-link" href="#errors">Códigos de Error</a>
+                    </nav>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="col-lg-9">
+                <!-- Authentication Section -->
+                <section id="authentication" class="mb-5">
+                    <h2 class="section-title">🔐 Autenticación</h2>
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Sistema de Autenticación JWT</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>La API utiliza tokens JWT para la autenticación. Todos los endpoints (excepto login) requieren un token válido.</p>
+                            
+                            <h6 class="mt-4">Métodos de Autenticación:</h6>
+                            <ul>
+                                <li><strong>Header Authorization:</strong> <code>Authorization: Bearer &lt;token&gt;</code></li>
+                                <li><strong>Cookie:</strong> <code>access_token_cookie</code> (automático)</li>
+                            </ul>
+
+                            <div class="endpoint-card card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6><span class="method-badge method-post">POST</span> /api/v1/auth/login</h6>
+                                    </div>
+                                    <p>Autenticar usuario y generar tokens JWT</p>
+                                    
+                                    <h6>Request Body:</h6>
+                                    <div class="code-block">
+{
+  "identification": 12345678,
+  "password": "password123"
+}
+                                    </div>
+
+                                    <h6>Response (200):</h6>
+                                    <div class="code-block">
+{
+  "message": "Autenticación exitosa",
+  "user": {
+    "id": 1,
+    "fullname": "Juan Pérez",
+    "role": "Instructor"
+  },
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+}
+                                    </div>
+
+                                    <h6>Códigos de Estado:</h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <span class="status-code status-200">200</span> Autenticación exitosa<br>
+                                            <span class="status-code status-401">401</span> Credenciales incorrectas<br>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <span class="status-code status-404">404</span> Usuario no encontrado<br>
+                                            <span class="status-code status-400">400</span> Datos inválidos
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Users Section -->
+                <section id="users" class="mb-5">
+                    <h2 class="section-title">👥 Gestión de Usuarios</h2>
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Endpoints de Usuarios</h5>
+                        </div>
+                        <div class="card-body">
+                            <!-- GET Users -->
+                            <div class="endpoint-card card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6><span class="method-badge method-get">GET</span> /api/v1/users/</h6>
+                                        <small class="text-muted">🔒 Requiere autenticación</small>
+                                    </div>
+                                    <p>Obtener lista de usuarios con filtros opcionales</p>
+                                    
+                                    <h6>Parámetros de consulta:</h6>
+                                    <ul>
+                                        <li><code>fullname</code> - Filtrar por nombre (búsqueda parcial)</li>
+                                        <li><code>role</code> - Filtrar por rol (Aprendiz, Instructor, Administrador)</li>
+                                        <li><code>status</code> - Filtrar por estado (true/false)</li>
+                                    </ul>
+
+                                    <h6>Ejemplo de uso:</h6>
+                                    <div class="code-block">
+GET /api/v1/users/?role=Instructor&status=true
+                                    </div>
+
+                                    <h6>Response (200):</h6>
+                                    <div class="code-block">
+{
+  "users": [
+    {
+      "id": 1,
+      "identification": 12345678,
+      "fullname": "Juan Pérez",
+      "email": "juan@example.com",
+      "role": "Instructor",
+      "status": true
+    }
+  ],
+  "total": 1
+}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- POST Users -->
+                            <div class="endpoint-card card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6><span class="method-badge method-post">POST</span> /api/v1/users/</h6>
+                                        <small class="text-muted">🔒 Requiere rol Administrador</small>
+                                    </div>
+                                    <p>Crear un nuevo usuario en el sistema</p>
+                                    
+                                    <h6>Request Body:</h6>
+                                    <div class="code-block">
+{
+  "identification": 87654321,
+  "fullname": "María García",
+  "password": "password123",
+  "email": "maria@example.com",
+  "phone": "3001234567",
+  "address": "Calle 123 #45-67",
+  "role": "Instructor",
+  "status": true
+}
+                                    </div>
+
+                                    <h6>Códigos de Estado:</h6>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <span class="status-code status-201">201</span> Usuario creado<br>
+                                            <span class="status-code status-403">403</span> Sin permisos<br>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <span class="status-code status-409">409</span> Datos duplicados<br>
+                                            <span class="status-code status-400">400</span> Datos inválidos
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Animals Section -->
+                <section id="animals" class="mb-5">
+                    <h2 class="section-title">🐄 Gestión de Animales</h2>
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Inventario Ganadero</h5>
+                        </div>
+                        <div class="card-body">
+                            <!-- GET Animals -->
+                            <div class="endpoint-card card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6><span class="method-badge method-get">GET</span> /api/v1/animals/</h6>
+                                        <small class="text-muted">🔒 Requiere autenticación</small>
+                                    </div>
+                                    <p>Obtener inventario completo de animales con filtros avanzados</p>
+                                    
+                                    <h6>Parámetros de consulta:</h6>
+                                    <ul>
+                                        <li><code>record</code> - Filtrar por registro del animal</li>
+                                        <li><code>breeds_id</code> - Filtrar por ID de raza</li>
+                                        <li><code>sex</code> - Filtrar por sexo (Hembra, Macho)</li>
+                                        <li><code>status</code> - Filtrar por estado (Vivo, Vendido, Muerto)</li>
+                                        <li><code>min_weight</code> - Peso mínimo en kg</li>
+                                        <li><code>max_weight</code> - Peso máximo en kg</li>
+                                    </ul>
+
+                                    <h6>Ejemplo de uso:</h6>
+                                    <div class="code-block">
+GET /api/v1/animals/?sex=Hembra&status=Vivo&min_weight=400
+                                    </div>
+
+                                    <h6>Response (200):</h6>
+                                    <div class="code-block">
+{
+  "animals": [
+    {
+      "idAnimal": 1,
+      "birth_date": "2023-01-15",
+      "weight": 450,
+      "breed": {
+        "id": 1,
+        "breed": "Holstein",
+        "species_id": 1
+      },
+      "sex": "Hembra",
+      "status": "Vivo",
+      "record": "BOV-001-2023",
+      "idFather": 2,
+      "idMother": 3
+    }
+  ],
+  "total": 1
+}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- POST Animals -->
+                            <div class="endpoint-card card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
+                                        <h6><span class="method-badge method-post">POST</span> /api/v1/animals/</h6>
+                                        <small class="text-muted">🔒 Requiere rol Administrador</small>
+                                    </div>
+                                    <p>Registrar un nuevo animal en el inventario</p>
+                                    
+                                    <h6>Request Body:</h6>
+                                    <div class="code-block">
+{
+  "sex": "Hembra",
+  "birth_date": "2023-06-15",
+  "weight": 380,
+  "record": "BOV-002-2023",
+  "status": "Vivo",
+  "breeds_id": 1,
+  "idFather": 2,
+  "idMother": 3
+}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Examples Section -->
+                <section id="examples" class="mb-5">
+                    <h2 class="section-title">💡 Ejemplos de Uso</h2>
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Casos de Uso Comunes</h5>
+                        </div>
+                        <div class="card-body">
+                            <h6>1. Flujo completo de autenticación:</h6>
+                            <div class="code-block">
+# 1. Login
+curl -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "identification": 12345678,
+    "password": "password123"
+  }'
+
+# 2. Usar el token en requests posteriores
+curl -X GET {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/users/ \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+                            </div>
+
+                            <h6>2. Crear un nuevo animal:</h6>
+                            <div class="code-block">
+curl -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/animals/ \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -d '{
+    "sex": "Hembra",
+    "birth_date": "2023-06-15",
+    "weight": 380,
+    "record": "BOV-002-2023",
+    "breeds_id": 1
+  }'
+                            </div>
+
+                            <h6>3. Filtrar animales por criterios:</h6>
+                            <div class="code-block">
+# Obtener todas las hembras vivas con peso mayor a 400kg
+curl -X GET "{{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/animals/?sex=Hembra&status=Vivo&min_weight=400" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Error Codes Section -->
+                <section id="errors" class="mb-5">
+                    <h2 class="section-title">⚠️ Códigos de Error</h2>
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0">Referencia de Códigos de Estado HTTP</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Códigos de Éxito:</h6>
+                                    <p><span class="status-code status-200">200</span> OK - Solicitud exitosa</p>
+                                    <p><span class="status-code status-201">201</span> Created - Recurso creado exitosamente</p>
+                                    
+                                    <h6>Códigos de Error del Cliente:</h6>
+                                    <p><span class="status-code status-400">400</span> Bad Request - Datos inválidos</p>
+                                    <p><span class="status-code status-401">401</span> Unauthorized - Token requerido o inválido</p>
+                                    <p><span class="status-code status-403">403</span> Forbidden - Permisos insuficientes</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Más Códigos de Error:</h6>
+                                    <p><span class="status-code status-404">404</span> Not Found - Recurso no encontrado</p>
+                                    <p><span class="status-code status-409">409</span> Conflict - Error de integridad</p>
+                                    <p><span class="status-code status-500">500</span> Internal Server Error - Error del servidor</p>
+                                    
+                                    <h6>Ejemplo de respuesta de error:</h6>
+                                    <div class="code-block">
+{
+  "message": "Token JWT requerido",
+  "error": "Missing Authorization header"
+}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container text-center">
+            <p>&copy; 2024 Finca Villa Luz. Sistema de gestión ganadera con tecnología moderna.</p>
+            <p class="mb-0">
+                <small>API Version 1.0 | Documentación generada automáticamente</small>
+            </p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script>
+        // Smooth scrolling for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+
+        // Update active navigation link on scroll
+        window.addEventListener('scroll', function() {
+            const sections = document.querySelectorAll('section[id]');
+            const navLinks = document.querySelectorAll('.sidebar .nav-link');
+            
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (scrollY >= (sectionTop - 200)) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === '#' + current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

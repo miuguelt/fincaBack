@@ -1,0 +1,1 @@
+# Namespaces para Flask-RESTX
