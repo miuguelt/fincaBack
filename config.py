@@ -7,11 +7,11 @@ class Config:
     """Configuración base de la aplicación. Aplica a todos los entornos."""
 
     # Configuración de Base de Datos
-    USER = os.getenv('DB_USER')
-    PASSWORD = os.getenv('DB_PASSWORD')
-    HOST = os.getenv('DB_HOST')
-    PORT = os.getenv('DB_PORT')
-    DATABASE = os.getenv('DB_NAME')
+    USER = os.getenv('DB_USER', 'root')
+    PASSWORD = os.getenv('DB_PASSWORD', 'password')
+    HOST = os.getenv('DB_HOST', 'localhost')
+    PORT = os.getenv('DB_PORT', '3306')
+    DATABASE = os.getenv('DB_NAME', 'finca_db')
     SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
@@ -118,10 +118,7 @@ class ProductionConfig(Config):
     
     # El dominio de la cookie debe ser el dominio principal (con punto inicial)
     # para que sea válido en cualquier subdominio
-    @property
-    def JWT_COOKIE_DOMAIN(self):
-        domain = os.getenv('JWT_COOKIE_DOMAIN')
-        return f".{domain}" if domain else None
+    JWT_COOKIE_DOMAIN = os.getenv('JWT_COOKIE_DOMAIN')
     
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
