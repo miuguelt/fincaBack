@@ -241,7 +241,9 @@ def create_app(config_name='production'):
         # Permitir preflight CORS
         if request.method == 'OPTIONS':
             return
-        path = request.path or ''
+        # Normalizar path quitando barra final para comparar correctamente
+        raw_path = request.path or ''
+        path = raw_path.rstrip('/') or '/'
         public_paths = {
             # Autenticación
             '/login',
@@ -279,6 +281,10 @@ def create_app(config_name='production'):
             '/api/v1/auth/login',
             '/api/v1/login',
             
+            # Registro de usuarios (público)
+            '/api/v1/users',
+            '/api/v1/users/',
+            
             # Debug (solo en desarrollo)
             '/debug-jwt-config',
             '/debug-jwt-config1',
@@ -292,7 +298,9 @@ def create_app(config_name='production'):
             '/',
             '/favicon.ico'
         }
-        if path in public_paths or path.startswith('/static/'):
+        # Normalizar public paths (quitar barras finales) y comparar
+        normalized_public = {p.rstrip('/') or '/' for p in public_paths}
+        if path in normalized_public or raw_path.startswith('/static/'):
             return
         try:
             verify_jwt_in_request()
@@ -320,7 +328,7 @@ def create_app(config_name='production'):
         api_bp,
         version='1.0',
         title='Finca Villa Luz API',
-        description='Sistema de gestión ganadera con documentación completa',
+        description='''Sistema de gestión ganadera con documentación completa.\n\nNotas de inicio rápido:\n- Usuario administrador semilla: identification=99999999 / password=password123 (si no existe se crea al arrancar).\n- Flujo recomendado: 1) Login (/auth/login) 2) Usar access_token (Bearer) o cookies 3) CRUD de usuarios/animales.\n- Para crear tu propio admin: crear nuevo usuario con role=Administrador y luego desactivar el semilla si deseas.''',
         doc='/docs/',
         contact='Finca Villa Luz',
         contact_email='info@fincavillaluz.com',
@@ -385,6 +393,30 @@ def create_app(config_name='production'):
         return redirect('/health', code=307)
 
     app.register_blueprint(api_bp)
+
+    # Bootstrap: crear usuario administrador semilla si no existe
+    try:
+        from app.models.user import User, Role
+        with app.app_context():
+            if not User.query.filter_by(identification=99999999).first():
+                from werkzeug.security import generate_password_hash
+                seed_admin = User(
+                    identification=99999999,
+                    fullname='Admin Seed',
+                    password=generate_password_hash('password123'),
+                    email='admin.seed@example.com',
+                    phone='3000000000',
+                    address='Main HQ',
+                    role=Role.Administrador,
+                    status=True
+                )
+                db.session.add(seed_admin)
+                db.session.commit()
+                logger.info('Usuario administrador semilla creado (identification=99999999)')
+            else:
+                logger.info('Usuario administrador semilla existente')
+    except Exception as e:
+        logger.warning(f'No se pudo crear usuario administrador semilla: {e}')
     
     # Ruta global para documentación
     @app.route('/docs')

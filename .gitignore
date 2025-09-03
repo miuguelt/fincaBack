@@ -186,3 +186,6 @@ test_endpoints.py
 API_ENDPOINTS_DOCUMENTATION.md
 *.py
 test_performance.py
+headers.txt
+docs/endpoints.md
+body.json

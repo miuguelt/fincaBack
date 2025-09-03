@@ -2,9 +2,9 @@ from app import db
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from typing import Optional, Dict, Any, List
-from app.models.base_model import BaseModel, TimestampMixin
+from app.models.base_model import BaseModel
 
-class Breeds(BaseModel, TimestampMixin):
+class Breeds(BaseModel):
     """Modelo para razas de animales optimizado para namespaces"""
     __tablename__ = 'breeds'
     
@@ -19,7 +19,7 @@ class Breeds(BaseModel, TimestampMixin):
     # Configuraciones del modelo base
     _searchable_fields = ['name']
     _filterable_fields = ['species_id']
-    _sortable_fields = ['id', 'name', 'created_at']
+    _sortable_fields = ['id', 'name']
     
     # Índices para optimización de consultas
     __table_args__ = (

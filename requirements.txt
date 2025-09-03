@@ -40,6 +40,8 @@ psutil==5.9.8
 # pytest-cov==5.0.0
 # black==24.4.2
 # flake8==7.1.0
+pytest-mock==3.14.0
+freezegun==1.5.1
 
 # Optional: Redis for advanced caching (uncomment if needed)
 # redis==5.0.7

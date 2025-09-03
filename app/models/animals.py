@@ -4,7 +4,7 @@ from datetime import datetime, date
 from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import joinedload, selectinload
 from typing import Optional, Dict, Any, List
-from app.models.base_model import BaseModel, TimestampMixin, ValidationError
+from app.models.base_model import BaseModel, ValidationError
 from app.models.breeds import Breeds
 import logging
 
@@ -31,7 +31,7 @@ class AnimalStatus(enum.Enum):
         """Retorna las opciones disponibles para namespaces"""
         return [(choice.value, choice.value) for choice in cls]
     
-class Animals(BaseModel, TimestampMixin):
+class Animals(BaseModel):
     """Modelo optimizado para animales con funcionalidades CRUD avanzadas"""
     __tablename__ = 'animals'
     
@@ -49,7 +49,7 @@ class Animals(BaseModel, TimestampMixin):
     # Configuraciones del modelo base
     _searchable_fields = ['record']
     _filterable_fields = ['sex', 'status', 'breeds_id', 'birth_date', 'weight']
-    _sortable_fields = ['id', 'record', 'birth_date', 'weight', 'created_at']
+    _sortable_fields = ['id', 'record', 'birth_date', 'weight']
     _required_fields = ['sex', 'birth_date', 'weight', 'record', 'breeds_id']
     _unique_fields = ['record']
 

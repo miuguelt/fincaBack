@@ -58,7 +58,10 @@ class Config:
 
     # Configuración base de JWT
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', secrets.token_hex(32))
-    JWT_TOKEN_LOCATION = ['cookies']
+    # Permitir autenticación vía cookies y encabezado Authorization (Bearer)
+    JWT_TOKEN_LOCATION = ['cookies', 'headers']
+    JWT_HEADER_NAME = 'Authorization'
+    JWT_HEADER_TYPE = 'Bearer'
     JWT_COOKIE_HTTPONLY = True
     JWT_ACCESS_COOKIE_NAME = 'access_token_cookie'
     JWT_REFRESH_COOKIE_NAME = 'refresh_token_cookie'
@@ -119,6 +122,11 @@ class DevelopmentConfig(Config):
     
     # Configuración adicional para desarrollo
     JWT_COOKIE_PATH = '/'
+
+    # Allow small clock skew when decoding tokens to avoid "Signature has expired"
+    # errors caused by minor time differences between clients and server.
+    # Value is in seconds.
+    JWT_DECODE_LEEWAY = 30
     
     # CORS - Orígenes de desarrollo
     CORS_ORIGINS = [
@@ -164,6 +172,10 @@ class ProductionConfig(Config):
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
 
+    # Allow a small leeway for token decoding to tolerate minor clock skew.
+    # Production servers should have accurate time (NTP) configured.
+    JWT_DECODE_LEEWAY = 30
+
     # CORS - Orígenes de producción
     # Incluye el dominio y el subdominio si tu frontend está en un subdominio
     CORS_ORIGINS = [
@@ -176,9 +188,19 @@ class ProductionConfig(Config):
         "http://localhost:3000"
     ]
 
+class TestingConfig(Config):
+    """Configuración específica para pruebas."""
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    JWT_COOKIE_CSRF_PROTECT = False
+    SQLALCHEMY_ENGINE_OPTIONS = {}
+    DEBUG = False
+    LOG_LEVEL = logging.DEBUG
+
 # Diccionario de configuración final
 config = {
     'development': DevelopmentConfig,
     'production': ProductionConfig,
+    'testing': TestingConfig,
     'default': DevelopmentConfig
 }

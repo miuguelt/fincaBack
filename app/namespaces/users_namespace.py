@@ -129,7 +129,7 @@ class UserList(Resource):
                 page=page,
                 per_page=per_page,
                 filters=request.args,
-                search_query=request.args.get('search'),
+                search=request.args.get('search'),
                 sort_by=request.args.get('sort_by', 'id'),
                 sort_order=request.args.get('sort_order', 'asc')
             )
@@ -164,6 +164,115 @@ class UserList(Resource):
                 status_code=500,
                 details={'error': str(e)}
             )
+
+    @users_ns.doc(
+        'create_user',
+        description='''
+        **Crear un nuevo usuario**\n\n
+        Endpoint principal para registrar usuarios.\n\n
+        Bootstrap inicial (primer usuario):\n
+        - Si la base de datos NO tiene usuarios aún (count==0) este endpoint permite crear el PRIMER usuario SIN token.\n
+        - Ese primer usuario debe tener rol "Administrador" (si envías otro rol se forzará / rechazará).\n
+        - A partir del segundo usuario ya se exige autenticación JWT con rol Administrador.\n\n
+        Validaciones:\n
+        - identification, email y phone deben ser únicos.\n
+        - phone debe tener 10 dígitos.\n
+        - password se almacena hasheada.\n\n
+        Ejemplo (primer usuario / bootstrap):\n        ```json\n        {\n            "identification": 99999999,\n            "fullname": "Admin Root",\n            "password": "password123",\n            "email": "admin@example.com",\n            "phone": "3000000000",\n            "address": "Sede",\n            "role": "Administrador",\n            "status": true\n        }\n        ```\n\n
+        Ejemplo (creación normal autenticada):\n        ```json\n        {\n            "identification": 12345678,\n            "fullname": "Juan Pérez",\n            "password": "password123",\n            "email": "juan@example.com",\n            "phone": "3001234567",\n            "address": "Calle 123 #45-67",\n            "role": "Instructor",\n            "status": true\n        }\n        ```
+        ''',
+        security=['Bearer', 'Cookie'],
+        responses={
+            201: ('Usuario creado', user_response_model),
+            400: 'Datos inválidos',
+            401: 'Token requerido',
+            403: 'Permisos insuficientes',
+            409: 'Conflicto de unicidad',
+            422: 'Error de validación',
+            500: 'Error interno'
+        }
+    )
+    @users_ns.expect(user_input_model, validate=True)
+    def post(self):
+        """Crear usuario (bootstrap abre sin auth si no existen usuarios)."""
+        try:
+            data = request.get_json() or {}
+
+            # Permitir creación de usuarios sin autenticación (registro público)
+            total_users = User.query.count()
+            bootstrap_mode = (total_users == 0)
+
+            # Verificar si hay JWT (opcional para registro público)
+            claims = None
+            try:
+                from flask_jwt_extended import verify_jwt_in_request, get_jwt
+                verify_jwt_in_request(optional=True)
+                claims = get_jwt()
+                # Si hay token, verificar que sea administrador para crear otros roles
+                if claims and claims.get('role') != 'Administrador':
+                    return APIResponse.error(message='Se requiere rol Administrador para crear usuarios', status_code=403)
+            except Exception:
+                # Sin token es válido para registro público
+                pass
+
+            # Validaciones básicas de tipos (ya pasó model validate=True, reforzamos reglas propias)
+            validation_errors = RequestValidator.validate_user_data(data)
+            if validation_errors:
+                return APIResponse.validation_error(validation_errors)
+
+            # Rol
+            try:
+                role_enum = Role(data['role'])
+            except Exception:
+                return APIResponse.validation_error({'role': 'Rol inválido. Use: Aprendiz, Instructor, Administrador'})
+
+            # Solo en bootstrap mode el primer usuario debe ser Administrador
+            if bootstrap_mode and role_enum != Role.Administrador:
+                return APIResponse.validation_error({'role': 'El primer usuario debe ser Administrador'})
+            
+            # Si hay token y no es administrador, solo puede crear usuarios con rol Aprendiz
+            if claims and claims.get('role') != 'Administrador' and role_enum != Role.Aprendiz:
+                return APIResponse.validation_error({'role': 'Solo administradores pueden crear usuarios con roles Instructor o Administrador'})
+
+            from werkzeug.security import generate_password_hash
+            hashed_password = generate_password_hash(data['password'])
+
+            new_user = User.create(
+                identification=data['identification'],
+                fullname=data['fullname'],
+                password=hashed_password,
+                email=data['email'],
+                phone=data['phone'],
+                address=data['address'],
+                role=role_enum,
+                status=data['status']
+            )
+
+            logger.info(
+                f"Usuario creado: {new_user.identification} ({new_user.fullname}) modo={'bootstrap' if bootstrap_mode else 'normal'}"
+            )
+
+            return APIResponse.created(
+                data=new_user.to_json(),
+                message=(
+                    'Usuario administrador inicial creado' if bootstrap_mode
+                    else f'Usuario {new_user.fullname} creado exitosamente'
+                )
+            )
+
+        except IntegrityError as e:
+            db.session.rollback()
+            detail = 'Dato duplicado'
+            msg_map = {'identification': 'Identificación ya existe', 'email': 'Email ya existe', 'phone': 'Teléfono ya existe'}
+            for k, v in msg_map.items():
+                if k in str(e):
+                    detail = v
+                    break
+            return APIResponse.conflict(message='Error de integridad', details={'error': detail})
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Error creando usuario: {e}")
+            return APIResponse.error(message='Error interno del servidor', status_code=500, details={'error': str(e)})
 
 # ============================================================================
 # ENDPOINT DE ESTADÍSTICAS DE USUARIOS
@@ -221,139 +330,6 @@ class UsersStatistics(Resource):
                 details={'error': str(e)}
             )
     
-    @users_ns.doc(
-        'create_user',
-        description='''
-        **Crear un nuevo usuario en el sistema**
-        
-        Este endpoint permite crear un nuevo usuario con todos los datos requeridos.
-        
-        **Validaciones:**
-        - El número de identificación debe ser único
-        - El email debe ser único
-        - El teléfono debe ser único y tener 10 dígitos
-        - La contraseña se hashea automáticamente
-        - El rol debe ser válido (Aprendiz, Instructor, Administrador)
-        
-        **Permisos:** Requiere autenticación JWT y rol de Administrador
-        
-        **Ejemplo de payload:**
-        ```json
-        {
-            "identification": 12345678,
-            "fullname": "Juan Pérez",
-            "password": "password123",
-            "email": "juan@example.com",
-            "phone": "3001234567",
-            "address": "Calle 123 #45-67",
-            "role": "Instructor",
-            "status": true
-        }
-        ```
-        ''',
-        security=['Bearer', 'Cookie'],
-        responses={
-            201: ('Usuario creado exitosamente', user_response_model),
-            400: 'Datos de entrada inválidos',
-            401: 'Token JWT requerido o inválido',
-            403: 'Permisos insuficientes (se requiere rol Administrador)',
-            409: 'Conflicto - Identificación, email o teléfono ya existe',
-            422: 'Error de validación',
-            500: 'Error interno del servidor'
-        }
-    )
-    @PerformanceLogger.log_request_performance
-    @SecurityValidator.require_admin_role
-    @RequestValidator.validate_json_required
-    @RequestValidator.validate_fields(
-        required_fields=['identification', 'fullname', 'password', 'email', 'phone', 'address', 'role', 'status'],
-        field_types={
-            'identification': int,
-            'fullname': str,
-            'password': str,
-            'email': str,
-            'phone': str,
-            'address': str,
-            'role': str,
-            'status': bool
-        }
-    )
-    @invalidate_cache_on_change(['users_list', 'users_stats'])
-    @jwt_required()
-    def post(self):
-        """Crear un nuevo usuario"""
-        try:
-            data = request.get_json()
-            current_user_claims = get_jwt()
-            
-            # Validaciones específicas de usuario
-            validation_errors = RequestValidator.validate_user_data(data)
-            if validation_errors:
-                return APIResponse.validation_error(validation_errors)
-            
-            # Validar rol
-            try:
-                role_enum = Role(data['role'])
-            except ValueError:
-                return APIResponse.validation_error(
-                    {'role': f'Rol inválido: {data["role"]}. Valores permitidos: Aprendiz, Instructor, Administrador'}
-                )
-            
-            # Hashear contraseña y delegar creación al modelo (valida y hace commit)
-            hashed_password = generate_password_hash(data['password'])
-            
-            new_user = User.create(
-                identification=data['identification'],
-                fullname=data['fullname'],
-                password=hashed_password,
-                email=data['email'],
-                phone=data['phone'],
-                address=data['address'],
-                role=role_enum,
-                status=data['status']
-            )
-            
-            logger.info(
-                f"Usuario creado: ID {new_user.identification} ({new_user.fullname}) "
-                f"por administrador {current_user_claims.get('identification')}"
-            )
-            
-            # Formatear respuesta sin contraseña
-            user_data = new_user.to_json()
-            
-            return APIResponse.created(
-                data=user_data,
-                message=f"Usuario {new_user.fullname} creado exitosamente"
-            )
-            
-        except IntegrityError as e:
-            db.session.rollback()
-            
-            # Determinar tipo de error de integridad
-            error_details = {}
-            if 'identification' in str(e):
-                error_details['identification'] = 'El número de identificación ya existe'
-            elif 'email' in str(e):
-                error_details['email'] = 'El email ya está registrado'
-            elif 'phone' in str(e):
-                error_details['phone'] = 'El teléfono ya está registrado'
-            else:
-                error_details['general'] = 'Datos duplicados'
-            
-            logger.warning(f"Error de integridad creando usuario: {str(e)}")
-            return APIResponse.conflict(
-                message="Error de integridad en los datos",
-                details=error_details
-            )
-            
-        except Exception as e:
-            db.session.rollback()
-            logger.error(f"Error creando usuario: {str(e)}")
-            return APIResponse.error(
-                message="Error interno del servidor",
-                status_code=500,
-                details={'error': str(e)}
-            )
 
 @users_ns.route('/<int:user_id>')
 class UserDetail(Resource):

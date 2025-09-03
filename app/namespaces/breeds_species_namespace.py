@@ -98,23 +98,144 @@ class SpeciesList(Resource):
     def get(self):
         """Obtener lista de especies"""
         try:
-            # Usar método optimizado para namespaces
-            page = request.args.get('page', 1, type=int)
-            per_page = min(request.args.get('per_page', 50, type=int), 100)
-            
-            # Usar método optimizado del modelo
-            pagination = Species.get_all_paginated(
-                page=page,
-                per_page=per_page
-            )
+            # Usar consulta SQL raw para evitar problemas con TimestampMixin
+            from app import db
+            result = db.session.execute(db.text("SELECT id, name FROM species"))
+            species_data = [{'id': row[0], 'name': row[1]} for row in result.fetchall()]
             
             return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} especies"
+                data={
+                    'species': species_data,
+                    'total': len(species_data),
+                    'page': 1,
+                    'per_page': len(species_data),
+                    'pages': 1
+                },
+                message=f"Se encontraron {len(species_data)} especies"
             )
             
         except Exception as e:
             logger.error(f"Error obteniendo especies: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+    
+    @breeds_species_ns.doc(
+        'create_breed',
+        description='Crear una nueva raza',
+        security=['Bearer', 'Cookie'],
+        responses={
+            201: 'Raza creada exitosamente',
+            400: 'Datos inválidos',
+            401: 'Token JWT requerido',
+            404: 'Especie no encontrada',
+            409: 'Raza ya existe',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def post(self):
+        """Crear nueva raza"""
+        try:
+            data = request.get_json()
+            if not data or 'name' not in data or 'species_id' not in data:
+                return APIResponse.validation_error({
+                    'name': 'El nombre es requerido',
+                    'species_id': 'El ID de especie es requerido'
+                })
+            
+            # Verificar que la especie existe usando SQL raw
+            from app import db
+            species_exists = db.session.execute(db.text("SELECT id FROM species WHERE id = :id"), {'id': data['species_id']}).fetchone()
+            if not species_exists:
+                return APIResponse.error(message="Especie no encontrada", status_code=404)
+            
+            # Verificar si ya existe la raza
+            existing = db.session.execute(db.text("SELECT id FROM breeds WHERE name = :name AND species_id = :species_id"), {
+                'name': data['name'],
+                'species_id': data['species_id']
+            }).fetchone()
+            if existing:
+                return APIResponse.error(message="La raza ya existe para esta especie", status_code=409)
+            
+            # Crear nueva raza
+            db.session.execute(db.text("INSERT INTO breeds (name, species_id) VALUES (:name, :species_id)"), {
+                'name': data['name'],
+                'species_id': data['species_id']
+            })
+            db.session.commit()
+            
+            # Obtener la raza creada con información de especie
+            new_breed = db.session.execute(db.text("""
+                SELECT b.id, b.name, b.species_id, s.name as species_name 
+                FROM breeds b 
+                JOIN species s ON b.species_id = s.id 
+                WHERE b.name = :name AND b.species_id = :species_id
+            """), {
+                'name': data['name'],
+                'species_id': data['species_id']
+            }).fetchone()
+            
+            return APIResponse.created(
+                data={
+                    'id': new_breed[0],
+                    'name': new_breed[1],
+                    'species_id': new_breed[2],
+                    'species_name': new_breed[3]
+                },
+                message=f"Raza {data['name']} creada exitosamente"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creando raza: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+    
+    @breeds_species_ns.doc(
+        'create_species',
+        description='Crear una nueva especie',
+        security=['Bearer', 'Cookie'],
+        responses={
+            201: 'Especie creada exitosamente',
+            400: 'Datos inválidos',
+            401: 'Token JWT requerido',
+            409: 'Especie ya existe',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def post(self):
+        """Crear nueva especie"""
+        try:
+            data = request.get_json()
+            if not data or 'name' not in data:
+                return APIResponse.validation_error({'name': 'El nombre es requerido'})
+            
+            # Verificar si ya existe
+            from app import db
+            existing = db.session.execute(db.text("SELECT id FROM species WHERE name = :name"), {'name': data['name']}).fetchone()
+            if existing:
+                return APIResponse.error(message="La especie ya existe", status_code=409)
+            
+            # Crear nueva especie
+            db.session.execute(db.text("INSERT INTO species (name) VALUES (:name)"), {'name': data['name']})
+            db.session.commit()
+            
+            # Obtener la especie creada
+            new_species = db.session.execute(db.text("SELECT id, name FROM species WHERE name = :name"), {'name': data['name']}).fetchone()
+            
+            return APIResponse.created(
+                data={'id': new_species[0], 'name': new_species[1]},
+                message=f"Especie {data['name']} creada exitosamente"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creando especie: {str(e)}")
             return APIResponse.error(
                 message="Error interno del servidor",
                 status_code=500,
@@ -502,27 +623,34 @@ class BreedsList(Resource):
     @conditional_cache(['breeds', 'species'], cache_timeout=1800)  # 30 minutos
     @jwt_required()
     def get(self):
-        """Obtener lista de razas con paginación y filtros"""
+        """Obtener lista de razas con información de especies"""
         try:
-            # Usar método optimizado para namespaces
-            page = request.args.get('page', 1, type=int)
-            per_page = min(request.args.get('per_page', 50, type=int), 100)
-            
-            # Usar método optimizado del modelo
-            pagination = Breeds.get_all_paginated(
-                page=page,
-                per_page=per_page
-            )
+            # Usar consulta SQL raw para evitar problemas con TimestampMixin
+            from app import db
+            result = db.session.execute(db.text("""
+                SELECT b.id, b.name, b.species_id, s.name as species_name 
+                FROM breeds b 
+                JOIN species s ON b.species_id = s.id
+                ORDER BY s.name, b.name
+            """))
+            breeds_data = [{
+                'id': row[0], 
+                'name': row[1], 
+                'species_id': row[2], 
+                'species_name': row[3]
+            } for row in result.fetchall()]
             
             return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} razas"
+                data={
+                    'breeds': breeds_data,
+                    'total': len(breeds_data),
+                    'page': 1,
+                    'per_page': len(breeds_data),
+                    'pages': 1
+                },
+                message=f"Se encontraron {len(breeds_data)} razas"
             )
             
-        except ValueError as e:
-            return APIResponse.validation_error(
-                {'pagination': 'Parámetros de paginación inválidos'}
-            )
         except Exception as e:
             logger.error(f"Error obteniendo razas: {str(e)}")
             return APIResponse.error(

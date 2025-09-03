@@ -580,7 +580,7 @@ GET /api/v1/animals/?sex=Hembra&status=Vivo&min_weight=400
                             <h6>1. Flujo completo de autenticación:</h6>
                             <div class="code-block">
 # 1. Login
-curl -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/auth/login \
+curl -k -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "identification": 12345678,
@@ -588,15 +588,15 @@ curl -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/a
   }'
 
 # 2. Usar el token en requests posteriores
-curl -X GET {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/users/ \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+curl -k -X GET {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/users/ \
+    -H "Authorization: Bearer YOUR_TOKEN_HERE"
                             </div>
 
                             <h6>2. Crear un nuevo animal:</h6>
                             <div class="code-block">
-curl -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/animals/ \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+curl -k -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/animals/ \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_TOKEN_HERE" \
   -d '{
     "sex": "Hembra",
     "birth_date": "2023-06-15",
@@ -609,8 +609,8 @@ curl -X POST {{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/a
                             <h6>3. Filtrar animales por criterios:</h6>
                             <div class="code-block">
 # Obtener todas las hembras vivas con peso mayor a 400kg
-curl -X GET "{{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/animals/?sex=Hembra&status=Vivo&min_weight=400" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+curl -k -X GET "{{ config.get('API_BASE_URL', 'https://localhost:8081/api/v1') }}/animals/?sex=Hembra&status=Vivo&min_weight=400" \
+    -H "Authorization: Bearer YOUR_TOKEN_HERE"
                             </div>
                         </div>
                     </div>
