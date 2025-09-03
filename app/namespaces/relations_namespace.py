@@ -190,9 +190,13 @@ class AnimalDiseasesList(Resource):
                 filters=request.args
             )
             
-            return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} relaciones animal-enfermedad"
+            diseases_data = ResponseFormatter.format_model_list(pagination.items)
+            return APIResponse.paginated_success(
+                data=diseases_data,
+                page=pagination.page,
+                per_page=pagination.per_page,
+                total=pagination.total,
+                message=f"Se encontraron {pagination.total} relaciones animal-enfermedad"
             )
             
         except ValueError as e:
@@ -448,9 +452,13 @@ class AnimalFieldsList(Resource):
                 end_date=request.args.get('end_date')
             )
             
-            return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} asignaciones animal-campo"
+            assignments_data = ResponseFormatter.format_model_list(pagination.items)
+            return APIResponse.paginated_success(
+                data=assignments_data,
+                page=pagination.page,
+                per_page=pagination.per_page,
+                total=pagination.total,
+                message=f"Se encontraron {pagination.total} asignaciones animal-campo"
             )
             
         except ValueError as e:
@@ -663,9 +671,13 @@ class TreatmentMedicationsList(Resource):
                 administration_route=request.args.get('administration_route')
             )
             
-            return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} medicamentos en tratamientos"
+            tmeds_data = ResponseFormatter.format_model_list(pagination.items)
+            return APIResponse.paginated_success(
+                data=tmeds_data,
+                page=pagination.page,
+                per_page=pagination.per_page,
+                total=pagination.total,
+                message=f"Se encontraron {pagination.total} medicamentos en tratamientos"
             )
             
         except Exception as e:
@@ -744,7 +756,7 @@ class TreatmentMedicationsList(Resource):
             )
             
             logger.info(
-                f"Medicamento asociado: {medication.medication} a tratamiento {treatment.diagnosis} "
+                f"Medicamento asociado: {medication.name} a tratamiento {treatment.diagnosis} "
                 f"por usuario {current_user.get('identification')}"
             )
             
@@ -752,13 +764,13 @@ class TreatmentMedicationsList(Resource):
             tm_data = ResponseFormatter.format_model(new_tm)
             tm_data.update({
                 'treatment_diagnosis': treatment.diagnosis,
-                'medication_name': medication.medication,
+                'medication_name': medication.name,
                 'animal_record': treatment.animal.record if treatment.animal else None
             })
             
             return APIResponse.created(
                 data=tm_data,
-                message=f"Medicamento '{medication.medication}' asociado al tratamiento"
+                message=f"Medicamento '{medication.name}' asociado al tratamiento"
             )
             
         except IntegrityError as e:
@@ -813,9 +825,13 @@ class TreatmentVaccinesList(Resource):
                 vaccine_id=request.args.get('vaccine_id', type=int)
             )
             
-            return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} vacunas en tratamientos"
+            tvaccs_data = ResponseFormatter.format_model_list(pagination.items)
+            return APIResponse.paginated_success(
+                data=tvaccs_data,
+                page=pagination.page,
+                per_page=pagination.per_page,
+                total=pagination.total,
+                message=f"Se encontraron {pagination.total} vacunas en tratamientos"
             )
             
         except Exception as e:

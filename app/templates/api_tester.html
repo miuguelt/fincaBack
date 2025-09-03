@@ -187,6 +187,10 @@
             <button class="btn btn-sm btn-outline-info preset-btn" onclick="loadPreset('getAnimals')">Listar Animales</button>
             <button class="btn btn-sm btn-outline-warning preset-btn" onclick="loadPreset('createUser')">Crear Usuario</button>
             <button class="btn btn-sm btn-outline-danger preset-btn" onclick="loadPreset('createAnimal')">Crear Animal</button>
+            <button class="btn btn-sm btn-outline-secondary preset-btn" onclick="loadPreset('getTreatments')">Tratamientos</button>
+            <button class="btn btn-sm btn-outline-secondary preset-btn" onclick="loadPreset('getVaccinations')">Vacunaciones</button>
+            <button class="btn btn-sm btn-outline-secondary preset-btn" onclick="loadPreset('getMedications')">Medicamentos</button>
+            <button class="btn btn-sm btn-outline-secondary preset-btn" onclick="loadPreset('getVaccines')">Vacunas</button>
         </div>
 
         <!-- API Tester -->
@@ -275,6 +279,10 @@
                     "password": "password123"
                 }, null, 2)
             },
+            getTreatments: { method: 'GET', endpoint: '/api/v1/medical/treatments', body: '' },
+            getVaccinations: { method: 'GET', endpoint: '/api/v1/medical/vaccinations', body: '' },
+            getMedications: { method: 'GET', endpoint: '/api/v1/medical/medications', body: '' },
+            getVaccines: { method: 'GET', endpoint: '/api/v1/medical/vaccines', body: '' },
             getUsers: {
                 method: 'GET',
                 endpoint: '/api/v1/users/',

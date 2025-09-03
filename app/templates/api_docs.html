@@ -324,7 +324,10 @@
                         <a class="nav-link" href="#authentication">Autenticación</a>
                         <a class="nav-link" href="#users">Gestión de Usuarios</a>
                         <a class="nav-link" href="#animals">Gestión de Animales</a>
-                        <a class="nav-link" href="#health">Salud Animal</a>
+                        <a class="nav-link" href="#management">Gestión Recursos</a>
+                        <a class="nav-link" href="#medical">Módulo Médico</a>
+                        <a class="nav-link" href="#relations">Relaciones</a>
+                        <a class="nav-link" href="#analytics">Analytics</a>
                         <a class="nav-link" href="#examples">Ejemplos de Uso</a>
                         <a class="nav-link" href="#errors">Códigos de Error</a>
                     </nav>
@@ -565,6 +568,196 @@ GET /api/v1/animals/?sex=Hembra&status=Vivo&min_weight=400
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Management Section -->
+                <section id="management" class="mb-5">
+                    <h2 class="section-title">🛠️ Gestión de Recursos (Management)</h2>
+                    <div class="card">
+                        <div class="card-header"><h5 class="mb-0">Campos, Controles, Enfermedades, Mejoras Genéticas y Tipos de Alimento</h5></div>
+                        <div class="card-body">
+                            <p>Resumen de endpoints principales. Todos requieren autenticación; creación/actualización/eliminación requieren rol <strong>Administrador</strong>.</p>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Campos (/api/v1/management/fields)</h6>
+                                    <ul>
+                                        <li><span class="method-badge method-get">GET</span> Listar</li>
+                                        <li><span class="method-badge method-post">POST</span> Crear</li>
+                                    </ul>
+                                    <div class="code-block">POST Body:
+{
+  "name": "Potrero 5",
+  "ubication": "Zona Sur",
+  "capacity": "30 animales",
+  "state": "Disponible",
+  "handlings": "Pastoreo rotacional",
+  "guages": "50x50",
+  "area": "2.5 ha",
+  "food_type_id": 1
+}</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Controles (/api/v1/management/controls)</h6>
+                                    <ul>
+                                        <li><span class="method-badge method-get">GET</span> Filtros: <code>animal_id</code>, <code>health_status</code></li>
+                                        <li><span class="method-badge method-post">POST</span> Registrar control</li>
+                                    </ul>
+                                    <div class="code-block">POST Body:
+{
+  "checkup_date": "2024-09-01",
+  "healt_status": "Excelente",
+  "description": "Sin novedades",
+  "animal_id": 1
+}</div>
+                                </div>
+                            </div>
+                            <hr>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <h6>Enfermedades</h6>
+                                    <p><span class="method-badge method-get">GET</span> Listar<br><span class="method-badge method-post">POST</span> Crear</p>
+                                </div>
+                                <div class="col-md-4">
+                                    <h6>Mejoras Genéticas</h6>
+                                    <p><span class="method-badge method-get">GET</span> Listar<br><span class="method-badge method-post">POST</span> Registrar</p>
+                                </div>
+                                <div class="col-md-4">
+                                    <h6>Tipos de Alimento</h6>
+                                    <p><span class="method-badge method-get">GET</span> Listar<br><span class="method-badge method-post">POST</span> Crear</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Medical Section -->
+                <section id="medical" class="mb-5">
+                    <h2 class="section-title">💊 Módulo Médico</h2>
+                    <div class="card">
+                        <div class="card-header"><h5 class="mb-0">Tratamientos, Vacunaciones, Medicamentos y Vacunas</h5></div>
+                        <div class="card-body">
+                            <p>Incluye estadísticas centralizadas y CRUD de recursos médicos. Todos requieren autenticación (crear/editar/eliminar generalmente rol Administrador excepto registrar tratamiento/vacunación).</p>
+                            <h6>Estadísticas</h6>
+                            <div class="endpoint-card card"><div class="card-body">
+                                <h6><span class="method-badge method-get">GET</span> /api/v1/medical/statistics</h6>
+                                <p>Totales y métricas agregadas de tratamientos, vacunaciones, medicamentos y vacunas.</p>
+                            </div></div>
+                            <h6>Tratamientos (/api/v1/medical/treatments)</h6>
+                            <ul>
+                                <li><span class="method-badge method-get">GET</span> Filtros: <code>animal_id</code>, <code>diagnosis</code>, fechas y paginación</li>
+                                <li><span class="method-badge method-post">POST</span> Crear</li>
+                                <li><span class="method-badge method-get">GET</span> /:id Detalle</li>
+                                <li><span class="method-badge method-put">PUT</span> /:id Actualizar</li>
+                                <li><span class="method-badge method-delete">DELETE</span> /:id Eliminar</li>
+                            </ul>
+                            <div class="code-block">POST Body:
+{
+  "start_date": "2024-08-20",
+  "description": "Tratamiento antibiótico",
+  "frequency": "Cada 12 horas",
+  "observations": "Aplicar con comida",
+  "dosis": "5ml",
+  "animal_id": 1
+}</div>
+                            <h6>Vacunaciones (/api/v1/medical/vaccinations)</h6>
+                            <ul>
+                                <li><span class="method-badge method-get">GET</span> Filtros: <code>animal_id</code>, <code>vaccine_id</code>, <code>instructor_id</code>, fechas</li>
+                                <li><span class="method-badge method-post">POST</span> Crear</li>
+                                <li><span class="method-badge method-get">GET</span> /:id Detalle</li>
+                                <li><span class="method-badge method-put">PUT</span> /:id Actualizar</li>
+                                <li><span class="method-badge method-delete">DELETE</span> /:id Eliminar</li>
+                            </ul>
+                            <div class="code-block">POST Body:
+{
+  "application_date": "2024-05-15",
+  "animal_id": 1,
+  "vaccine_id": 2,
+  "apprentice_id": 5,
+  "instructor_id": 3
+}</div>
+                            <h6>Medicamentos (/api/v1/medical/medications)</h6>
+                            <p><strong>Campo correcto:</strong> <code>name</code> (no <code>medication</code>). Resto de campos: <code>description</code>, <code>indications</code>, <code>contraindications</code>, <code>route_administration</code> (Oral, Inyección, Intranasal, Tópica), <code>availability</code>.</p>
+                            <div class="code-block">POST Body:
+{
+  "name": "Penicilina",
+  "description": "Antibiótico amplio espectro",
+  "indications": "Infecciones bacterianas",
+  "contraindications": "Alergia a penicilinas",
+  "route_administration": "Inyección",
+  "availability": true
+}</div>
+                            <h6>Vacunas (/api/v1/medical/vaccines)</h6>
+                            <div class="code-block">POST Body:
+{
+  "name": "Clostridiosis 8 vías",
+  "dosis": "2ml",
+  "route_administration": "Inyección",
+  "vaccination_interval": "12 meses",
+  "vaccine_type": "Inactivada",
+  "national_plan": "Plan Nacional",
+  "target_disease_id": 1
+}</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Relations Section -->
+                <section id="relations" class="mb-5">
+                    <h2 class="section-title">🔗 Relaciones</h2>
+                    <div class="card">
+                        <div class="card-header"><h5 class="mb-0">Tablas Intermedias</h5></div>
+                        <div class="card-body">
+                            <p>Endpoints para asociaciones entre entidades. Todos requieren autenticación.</p>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Animal - Enfermedad</h6>
+                                    <p><span class="method-badge method-post">POST</span> /api/v1/relations/animal-diseases</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Animal - Campo</h6>
+                                    <p><span class="method-badge method-post">POST</span> /api/v1/relations/animal-fields</p>
+                                </div>
+                            </div>
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <h6>Tratamiento - Medicamento</h6>
+                                    <p><span class="method-badge method-post">POST</span> /api/v1/relations/treatment-medications</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Tratamiento - Vacuna</h6>
+                                    <p><span class="method-badge method-post">POST</span> /api/v1/relations/treatment-vaccines</p>
+                                </div>
+                            </div>
+                            <hr>
+                            <h6>Estadísticas</h6>
+                            <p><span class="method-badge method-get">GET</span> /api/v1/relations/statistics</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Analytics Section -->
+                <section id="analytics" class="mb-5">
+                    <h2 class="section-title">📊 Analytics & Reportes</h2>
+                    <div class="card">
+                        <div class="card-header"><h5 class="mb-0">Dashboards y Alertas</h5></div>
+                        <div class="card-body">
+                            <ul>
+                                <li><span class="method-badge method-get">GET</span> /api/v1/analytics/dashboard</li>
+                                <li><span class="method-badge method-get">GET</span> /api/v1/analytics/alerts</li>
+                                <li><span class="method-badge method-post">POST</span> /api/v1/analytics/reports/custom</li>
+                                <li><span class="method-badge method-get">GET</span> /api/v1/analytics/animals/statistics</li>
+                                <li><span class="method-badge method-get">GET</span> /api/v1/analytics/health/statistics</li>
+                                <li><span class="method-badge method-get">GET</span> /api/v1/analytics/production/statistics</li>
+                            </ul>
+                            <div class="code-block">POST /analytics/reports/custom ejemplo:
+{
+  "report_type": "health",
+  "start_date": "2024-01-01",
+  "end_date": "2024-08-31",
+  "format": "summary"
+}</div>
                         </div>
                     </div>
                 </section>

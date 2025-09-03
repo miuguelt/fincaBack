@@ -691,7 +691,7 @@ class AnimalMedicalHistory(Resource):
                 Vaccinations.id,
                 Vaccinations.application_date,
                 Vaccinations.dose,
-                Vaccines.vaccine,
+                Vaccines.name,
                 User.fullname.label('applied_by')
             ).join(Vaccines).join(
                 User, User.id == Vaccinations.instructor_id
@@ -748,11 +748,11 @@ class AnimalMedicalHistory(Resource):
                 timeline.append({
                     'type': 'vaccination',
                     'date': vaccination.application_date.isoformat(),
-                    'title': f'Vacunación: {vaccination.vaccine}',
+                    'title': f'Vacunación: {vaccination.name}',
                     'description': f'Dosis: {vaccination.dose}',
                     'details': {
                         'id': vaccination.id,
-                        'vaccine': vaccination.vaccine,
+                        'vaccine': vaccination.name,
                         'dose': vaccination.dose,
                         'applied_by': vaccination.applied_by
                     },
@@ -828,7 +828,7 @@ class AnimalMedicalHistory(Resource):
                     {
                         'id': v.id,
                         'date': v.application_date.isoformat(),
-                        'vaccine': v.vaccine,
+                                'vaccine': v.name,
                         'dose': v.dose,
                         'applied_by': v.applied_by
                     } for v in vaccinations

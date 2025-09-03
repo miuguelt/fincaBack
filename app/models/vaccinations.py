@@ -47,7 +47,7 @@ class Vaccinations(BaseModel, TimestampMixin):
     _filterable_fields = ['animal_id', 'vaccine_id', 'instructor_id', 'apprentice_id']
     _sortable_fields = ['id', 'application_date', 'created_at']
     _required_fields = ['animal_id', 'vaccine_id', 'application_date', 'instructor_id']
-    _eager_relations = ['animals', 'vaccines']
+    _eager_relations = ['animals', 'vaccines', 'apprentice', 'instructor']
 
     def _validate_instance(self):
         errors = []

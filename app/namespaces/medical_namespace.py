@@ -8,7 +8,7 @@ from app.models.medications import Medications
 from app.models.animals import Animals
 from app.models.user import User
 from app import db
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from datetime import datetime
 import logging
 
@@ -93,24 +93,24 @@ vaccination_response_model = medical_ns.model('VaccinationResponse', {
 })
 
 medication_input_model = medical_ns.model('MedicationInput', {
-    'medication': fields.String(required=True, description='Nombre del medicamento', example='Penicilina'),
+    'name': fields.String(required=True, description='Nombre del medicamento', example='Penicilina'),
     'description': fields.String(description='Descripción del medicamento', example='Antibiótico de amplio espectro')
 })
 
 medication_response_model = medical_ns.model('MedicationResponse', {
     'id': fields.Integer(description='ID único del medicamento'),
-    'medication': fields.String(description='Nombre del medicamento'),
+    'name': fields.String(description='Nombre del medicamento'),
     'description': fields.String(description='Descripción del medicamento')
 })
 
 vaccine_input_model = medical_ns.model('VaccineInput', {
-    'vaccine': fields.String(required=True, description='Nombre de la vacuna', example='Vacuna Triple'),
+    'name': fields.String(required=True, description='Nombre de la vacuna', example='Vacuna Triple'),
     'description': fields.String(description='Descripción de la vacuna', example='Protege contra 3 enfermedades')
 })
 
 vaccine_response_model = medical_ns.model('VaccineResponse', {
     'id': fields.Integer(description='ID único de la vacuna'),
-    'vaccine': fields.String(description='Nombre de la vacuna'),
+    'name': fields.String(description='Nombre de la vacuna'),
     'description': fields.String(description='Descripción de la vacuna')
 })
 
@@ -244,9 +244,15 @@ class TreatmentsList(Resource):
                 sort_order=request.args.get('sort_order', 'desc')
             )
             
-            return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} tratamientos"
+            # Formatear la respuesta para que sea compatible con la paginación
+            treatments_data = ResponseFormatter.format_model_list(pagination.items)
+            
+            return APIResponse.paginated_success(
+                data=treatments_data,
+                page=pagination.page,
+                per_page=pagination.per_page,
+                total=pagination.total,
+                message=f"Se encontraron {pagination.total} tratamientos"
             )
             
         except Exception as e:
@@ -801,12 +807,19 @@ class VaccinationsList(Resource):
             pagination = Vaccinations.get_all_paginated(
                 page=page,
                 per_page=per_page,
-                filters=request.args
+                filters=request.args,
+                include_relations=True  # Asegurar que se carguen las relaciones
             )
             
-            return APIResponse.success(
-                data=pagination,
-                message=f"Se encontraron {pagination['total']} vacunaciones"
+            # Formatear la respuesta para que sea compatible con la paginación
+            vaccinations_data = ResponseFormatter.format_model_list(pagination.items)
+            
+            return APIResponse.paginated_success(
+                data=vaccinations_data,
+                page=pagination.page,
+                per_page=pagination.per_page,
+                total=pagination.total,
+                message=f"Se encontraron {pagination.total} vacunaciones"
             )
             
         except Exception as e:
@@ -973,16 +986,50 @@ class MedicationsList(Resource):
             query = Medications.query
             
             if name_filter:
-                query = query.filter(Medications.medication.ilike(f"%{name_filter}%"))
-            
-            medications = query.order_by(Medications.medication).all()
-            
-            medications_data = ResponseFormatter.format_model_list(medications)
-            
-            return APIResponse.success(
-                data=medications_data,
-                message=f"Se encontraron {len(medications)} medicamentos"
-            )
+                query = query.filter(Medications.name.ilike(f"%{name_filter}%"))
+            # Intentar la consulta estándar; si la tabla no tiene columnas de timestamp
+            # (p. ej. created_at/updated_at) la consulta podría fallar en tiempo de ejecución
+            # debido a un esquema desincronizado. En ese caso hacemos un fallback a SQL
+            # crudo seleccionando sólo las columnas conocidas.
+            try:
+                medications = query.order_by(Medications.name).all()
+                medications_data = ResponseFormatter.format_model_list(medications)
+                return APIResponse.success(
+                    data=medications_data,
+                    message=f"Se encontraron {len(medications)} medicamentos"
+                )
+            except OperationalError as oe:
+                # Registrar y usar fallback a SQL crudo sin timestamps
+                logger.warning(f"OperationalError querying Medications, falling back to raw SQL: {oe}")
+                from sqlalchemy import text
+
+                sql = (
+                    "SELECT id, name, description, indications, contraindications, "
+                    "route_administration, availability FROM medications"
+                )
+                params = {}
+                if name_filter:
+                    sql += " WHERE name LIKE :name"
+                    params['name'] = f"%{name_filter}%"
+                sql += " ORDER BY name"
+
+                result = db.session.execute(text(sql), params).mappings().all()
+                medications_data = []
+                for row in result:
+                    medications_data.append({
+                        'id': row['id'],
+                        'name': row['name'],
+                        'description': row['description'],
+                        'indications': row.get('indications'),
+                        'contraindications': row.get('contraindications'),
+                        'route_administration': row.get('route_administration'),
+                        'availability': bool(row.get('availability'))
+                    })
+
+                return APIResponse.success(
+                    data=medications_data,
+                    message=f"Se encontraron {len(medications_data)} medicamentos (fallback)"
+                )
             
         except Exception as e:
             logger.error(f"Error obteniendo medicamentos: {str(e)}")
@@ -1019,23 +1066,23 @@ class MedicationsList(Resource):
             
             # Verificar que no existe el medicamento
             existing_medication = Medications.query.filter(
-                Medications.medication.ilike(data['medication'])
+                Medications.name.ilike(data['name'])
             ).first()
             
             if existing_medication:
                 return APIResponse.conflict(
                     message="El medicamento ya existe",
-                    details={'medication': data['medication']}
+                    details={'medication': data['name']}
                 )
             
             # Crear nuevo medicamento usando Medications.create para centralizar commits y validaciones
             new_medication = Medications.create(
-                medication=data['medication'],
+                name=data['name'],
                 description=data.get('description', '')
             )
             
             logger.info(
-                f"Medicamento creado: {new_medication.medication} "
+                f"Medicamento creado: {new_medication.name} "
                 f"por administrador {current_user.get('identification')}"
             )
             
@@ -1043,7 +1090,7 @@ class MedicationsList(Resource):
             
             return APIResponse.created(
                 data=medication_data,
-                message=f"Medicamento '{new_medication.medication}' creado exitosamente"
+                message=f"Medicamento '{new_medication.name}' creado exitosamente"
             )
             
         except IntegrityError as e:
@@ -1138,18 +1185,18 @@ class VaccinesList(Resource):
             
             # Verificar que no existe la vacuna
             existing_vaccine = Vaccines.query.filter(
-                Vaccines.name.ilike(data['vaccine'])
+                Vaccines.name.ilike(data['name'])
             ).first()
             
             if existing_vaccine:
                 return APIResponse.conflict(
                     message="La vacuna ya existe",
-                    details={'vaccine': data['vaccine']}
+                    details={'vaccine': data['name']}
                 )
             
             # Crear nueva vacuna usando Vaccines.create para centralizar commits y validaciones
             new_vaccine = Vaccines.create(
-                name=data['vaccine'],
+                name=data['name'],
                 dosis=data.get('dosis', '1ml'),
                 route_administration=data.get('route_administration', 'Intramuscular'),
                 vaccination_interval=data.get('vaccination_interval', '12 meses'),

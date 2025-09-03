@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Definir modelos para este namespace
 login_model = auth_ns.model('Login', {
-    'identification': fields.Integer(required=True, description='Número de identificación del usuario', example=12345678),
+    'identification': fields.String(required=True, description='Número de identificación del usuario o email', example='12345678'),
     'password': fields.String(required=True, description='Contraseña del usuario', example='password123')
 })
 
@@ -83,23 +83,28 @@ class Login(Resource):
         identification = data.get('identification')
         password = data.get('password')
 
-        if not identification or not password:
-            auth_ns.abort(400, 'Identificación y contraseña son requeridos')
-
-        # Buscar usuario por identificación
-        user = User.query.filter_by(identification=identification).first()
-
-        if not user:
-            auth_ns.abort(404, 'Usuario no encontrado')
-
-        if not user.status:
-            auth_ns.abort(401, 'Usuario inactivo')
-
-        # Usar método optimizado del modelo para verificar contraseña
-        if not user.check_password(password):
-            auth_ns.abort(401, 'Credenciales incorrectas')
-
         try:
+            if not identification or not password:
+                return jsonify({'message': 'Identification and password are required'}), 400
+
+            # Buscar usuario por identificación
+            # Normalize identification to int if possible (DB stores BigInteger)
+            try:
+                ident_value = int(identification)
+            except (ValueError, TypeError):
+                ident_value = identification
+            user = User.query.filter_by(identification=ident_value).first()
+
+            if not user:
+                return jsonify({'message': 'User not found'}), 404
+
+            if not user.status:
+                return jsonify({'message': 'User inactive'}), 401
+
+            # Usar método optimizado del modelo para verificar contraseña
+            if not user.check_password(password):
+                return jsonify({'message': 'Invalid credentials'}), 401
+
             # Crear tokens JWT - Compatible con Flask-JWT-Extended 4.6.0
             # El campo 'identity' debe ser string, datos adicionales van en 'additional_claims'
             user_identity = str(user.id)  # Flask-JWT-Extended 4.6.0 requiere string
@@ -123,7 +128,7 @@ class Login(Resource):
 
             # Crear respuesta usando formato optimizado para namespaces
             response_data = {
-                'message': 'Autenticación exitosa',
+                'message': 'Login successful',
                 'user': user.to_json(),
                 'access_token': access_token,
                 'refresh_token': refresh_token
@@ -139,7 +144,7 @@ class Login(Resource):
             return response
 
         except Exception as e:
-            logger.error(f"Error en la generación de tokens o cookies para el usuario {identification}: {str(e)}")
+            logger.error(f"Error en login para el usuario {identification}: {str(e)}", exc_info=True)
             auth_ns.abort(500, f'Error interno del servidor al procesar la sesión: {str(e)}')
 
 @auth_ns.route('/refresh')
