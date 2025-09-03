@@ -27,9 +27,10 @@ def test_animals_route():
             try:
                 total_animals = Animals.query.count()
                 print(f"✅ Conexión a BD exitosa: {total_animals} animales en total")
+                assert total_animals >= 0, "El conteo de animales debe ser no negativo"
             except Exception as e:
                 print(f"❌ Error de conexión a BD: {e}")
-                return False
+                assert False, f"Error de conexión a BD: {e}"
             
             # Probar la consulta optimizada
             try:
@@ -44,6 +45,7 @@ def test_animals_route():
                 # Obtener algunos animales para probar
                 animals = query.limit(5).all()
                 print(f"✅ Consulta optimizada exitosa: {len(animals)} animales obtenidos")
+                assert isinstance(animals, list), "La consulta debe devolver una lista"
                 
                 # Probar serialización
                 animals_json = []
@@ -52,14 +54,16 @@ def test_animals_route():
                         animal_data = animal.to_json()
                         animals_json.append(animal_data)
                         print(f"  • Animal {animal.id}: {animal.record} - {animal.sex} - {animal.status}")
+                        assert isinstance(animal_data, dict), "to_json() debe devolver un diccionario"
                     except Exception as e:
                         print(f"  ❌ Error serializando animal {animal.id}: {e}")
+                        assert False, f"Error serializando animal {animal.id}: {e}"
                 
                 print(f"✅ Serialización exitosa: {len(animals_json)} animales serializados")
                 
             except Exception as e:
                 print(f"❌ Error en consulta optimizada: {e}")
-                return False
+                assert False, f"Error en consulta optimizada: {e}"
             
             # Probar paginación
             try:
@@ -90,10 +94,16 @@ def test_animals_route():
                 print(f"  • Tiene anterior: {result['has_prev']}")
                 print(f"  • Animales en esta página: {len(result['animals'])}")
                 
-                # Verificar que no hay campos null
+                # Verificaciones con assert
+                assert result['total'] >= 0, "El total debe ser no negativo"
+                assert result['page'] == page, "La página debe coincidir"
+                assert result['per_page'] == per_page, "per_page debe coincidir"
+                assert isinstance(result['animals'], list), "animals debe ser una lista"
+                
+                # Verificar que no hay campos null críticos
                 null_fields = []
                 for field, value in result.items():
-                    if value is None:
+                    if field not in ['animals'] and value is None:
                         null_fields.append(field)
                 
                 if null_fields:
@@ -101,17 +111,17 @@ def test_animals_route():
                 else:
                     print("✅ No hay campos null en la respuesta")
                 
-                return True
+                assert len(null_fields) == 0, f"No debería haber campos null: {null_fields}"
                 
             except Exception as e:
                 print(f"❌ Error en paginación: {e}")
-                return False
+                assert False, f"Error en paginación: {e}"
                 
     except Exception as e:
         print(f"❌ Error general: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Error general: {e}"
 
 def test_endpoint_simulation():
     """Simular el endpoint completo"""
@@ -128,17 +138,18 @@ def test_endpoint_simulation():
             
             if response.status_code == 401:
                 print("✅ Autenticación requerida (esperado)")
+                assert response.status_code == 401, "Debe requerir autenticación"
             else:
                 print(f"⚠️  Status inesperado: {response.status_code}")
                 print(f"Respuesta: {response.get_data(as_text=True)[:200]}...")
-            
-            return True
+                # No fallar si no es 401, pero verificar que es un código válido
+                assert response.status_code in [200, 302, 401, 403], f"Código de estado inesperado: {response.status_code}"
             
     except Exception as e:
         print(f"❌ Error simulando endpoint: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Error simulando endpoint: {e}"
 
 def main():
     print("🚀 Diagnóstico de la Ruta de Animales")

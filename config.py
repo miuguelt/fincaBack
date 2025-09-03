@@ -13,9 +13,7 @@ class Config:
     PORT = os.getenv('DB_PORT', '3306')
     DATABASE = os.getenv('DB_NAME', 'finca_db')
     # Driver configurable por variable de entorno DB_DRIVER: pymysql | mysqldb | mysqlconnector
-    DB_DRIVER = os.getenv('DB_DRIVER', 'pymysql').lower()
-    if DB_DRIVER not in ('pymysql', 'mysqldb', 'mysqlconnector'):
-        DB_DRIVER = 'pymysql'
+    DB_DRIVER = 'pymysql'
     # Nota: mysqldb (mysqlclient) requiere compilación en Windows; fallback automático a PyMySQL si no instalado.
     SQLALCHEMY_DATABASE_URI = f'mysql+{DB_DRIVER}://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
