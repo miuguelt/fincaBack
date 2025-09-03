@@ -13,9 +13,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import text
 
 # Importar middlewares de optimización
-from app.utils.middleware import RequestMiddleware, SecurityMiddleware, MetricsMiddleware
-from app.utils.cache_manager import cache
-from app.utils.db_optimization import init_db_optimizations
+from .utils.middleware import RequestMiddleware, SecurityMiddleware, MetricsMiddleware
+from .utils.cache_manager import cache
+from .utils.db_optimization import init_db_optimizations
 
 # ====================================================================
 # 1. Inicialización de extensiones (sin enlazarlas a la app aún)
@@ -351,14 +351,14 @@ def create_app(config_name='production'):
         security=['Bearer', 'Cookie']
     )
     
-    from app.namespaces.auth_namespace import auth_ns
-    from app.namespaces.users_namespace import users_ns
-    from app.namespaces.animals_namespace import animals_ns
-    from app.namespaces.analytics_namespace import analytics_ns
-    from app.namespaces.breeds_species_namespace import breeds_species_ns
-    from app.namespaces.medical_namespace import medical_ns
-    from app.namespaces.management_namespace import management_ns
-    from app.namespaces.relations_namespace import relations_ns
+    from .namespaces.auth_namespace import auth_ns
+    from .namespaces.users_namespace import users_ns
+    from .namespaces.animals_namespace import animals_ns
+    from .namespaces.analytics_namespace import analytics_ns
+    from .namespaces.breeds_species_namespace import breeds_species_ns
+    from .namespaces.medical_namespace import medical_ns
+    from .namespaces.management_namespace import management_ns
+    from .namespaces.relations_namespace import relations_ns
     
     # Agregar namespaces a la API
     api.add_namespace(auth_ns)
@@ -396,7 +396,7 @@ def create_app(config_name='production'):
 
     # Bootstrap: crear usuario administrador semilla si no existe
     try:
-        from app.models.user import User, Role
+        from .models.user import User, Role
         with app.app_context():
             if not User.query.filter_by(identification=99999999).first():
                 from werkzeug.security import generate_password_hash
