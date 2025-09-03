@@ -1,7 +1,8 @@
 from flask_restx import Namespace, Resource, fields
 from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models.control import Control, HealtStatus
+from app.models.control import Control, HealthStatus
+# HealtStatus es ahora un alias de HealthStatus para compatibilidad
 from app.models.fields import Fields, LandStatus
 from app.models.diseases import Diseases
 from app.models.geneticImprovements import GeneticImprovements
@@ -18,8 +19,9 @@ from app.utils.validators import (
     RequestValidator, PerformanceLogger, SecurityValidator
 )
 from app.utils.cache_manager import (
-    cache_query_result, invalidate_cache_on_change, QueryOptimizer
+    cache_query_result, invalidate_cache_on_change
 )
+from app.utils.etag_cache import etag_cache, conditional_cache
 
 # Crear el namespace
 management_ns = Namespace(
@@ -52,6 +54,16 @@ control_response_model = management_ns.model('ControlResponse', {
     'description': fields.String(description='Descripción del control'),
     'animal_id': fields.Integer(description='ID del animal controlado'),
     'animals': fields.Raw(description='Datos del animal')
+})
+
+control_list_response_model = management_ns.model('ControlListResponse', {
+    'controls': fields.List(fields.Nested(control_response_model), description='Lista de controles'),
+    'total': fields.Integer(description='Total de controles'),
+    'page': fields.Integer(description='Página actual'),
+    'per_page': fields.Integer(description='Elementos por página'),
+    'pages': fields.Integer(description='Total de páginas'),
+    'has_next': fields.Boolean(description='Hay página siguiente'),
+    'has_prev': fields.Boolean(description='Hay página anterior')
 })
 
 field_input_model = management_ns.model('FieldInput', {
@@ -111,7 +123,7 @@ genetic_improvement_update_model = management_ns.model('GeneticImprovementUpdate
 
 genetic_improvement_response_model = management_ns.model('GeneticImprovementResponse', {
     'id': fields.Integer(description='ID único de la mejora genética'),
-    'genetic_event_techique': fields.String(description='Tipo de mejora genética'),
+    'genetic_event_technique': fields.String(description='Tipo de mejora genética'),
     'details': fields.String(description='Descripción de la mejora'),
     'results': fields.String(description='Resultado esperado'),
     'date': fields.String(description='Fecha de la mejora'),
@@ -139,7 +151,72 @@ success_message_model = management_ns.model('SuccessMessage', {
 })
 
 # ============================================================================
-# ENDPOINTS DE CONTROL DE SALUD
+# ENDPOINTS DE ESTADÍSTICAS DE GESTIÓN
+# ============================================================================
+
+@management_ns.route('/statistics')
+class ManagementStatistics(Resource):
+    @management_ns.doc(
+        'get_management_statistics',
+        description='''
+        **Obtener estadísticas de gestión completas**
+        
+        Retorna estadísticas consolidadas de controles, campos, mejoras genéticas y tipos de alimentos.
+        
+        **Información incluida:**
+        - Estadísticas de controles de salud por estado y período
+        - Estadísticas de campos por estado y ocupación
+        - Estadísticas de mejoras genéticas por técnica
+        - Estadísticas de tipos de alimentos por área
+        
+        **Casos de uso:**
+        - Dashboard de gestión
+        - Reportes de productividad
+        - Análisis de tendencias de gestión
+        ''',
+        security=['Bearer', 'Cookie'],
+        responses={
+            200: 'Estadísticas de gestión completas',
+            401: 'Token JWT requerido o inválido',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def get(self):
+        """Obtener estadísticas de gestión completas"""
+        try:
+            # Obtener estadísticas de todos los modelos de gestión
+            control_stats = Control.get_statistics()
+            fields_stats = Fields.get_statistics()
+            genetic_stats = GeneticImprovements.get_statistics()
+            food_types_stats = FoodTypes.get_statistics()
+            
+            return APIResponse.success(
+                data={
+                    'controls': control_stats,
+                    'fields': fields_stats,
+                    'genetic_improvements': genetic_stats,
+                    'food_types': food_types_stats,
+                    'summary': {
+                        'total_controls': control_stats.get('total_controls', 0),
+                        'total_fields': fields_stats.get('total_fields', 0),
+                        'total_genetic_improvements': genetic_stats.get('total_improvements', 0),
+                        'total_food_types': food_types_stats.get('total_food_types', 0)
+                    }
+                },
+                message="Estadísticas de gestión obtenidas exitosamente"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas de gestión: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+
+# ============================================================================
+# ENDPOINTS DE CONTROLES DE SALUD
 # ============================================================================
 
 @management_ns.route('/controls')
@@ -178,40 +255,30 @@ class ControlsList(Resource):
             'per_page': {'description': 'Elementos por página', 'type': 'integer', 'default': 20}
         },
         responses={
-            200: ('Lista de controles', [control_response_model]),
+            200: ('Lista de controles paginada', control_list_response_model),
+            400: 'Parámetros de filtro inválidos',
             401: 'Token JWT requerido o inválido',
             500: 'Error interno del servidor'
         }
     )
     @PerformanceLogger.log_request_performance
-    @cache_query_result("controls_list", ttl_seconds=600)
+    @etag_cache('control', cache_timeout=600)  # 10 minutos
     @jwt_required()
     def get(self):
-        """Obtener lista de controles"""
+        """Obtener lista de controles con paginación y filtros"""
         try:
-            # Consulta básica sin filtros complejos
-            controls = Control.query.all()
+            # Usar método optimizado para namespaces del modelo
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 20, type=int), 100)
             
-            # Formatear datos básicos
-            controls_data = []
-            for control in controls:
-                try:
-                    control_dict = {
-                        'id': control.id,
-                        'checkup_date': control.checkup_date.strftime('%Y-%m-%d') if control.checkup_date else None,
-                        'healt_status': control.healt_status.value if control.healt_status else None,
-                        'description': control.description,
-                        'animal_id': control.animal_id
-                    }
-                    controls_data.append(control_dict)
-                except Exception as control_error:
-                    logger.error(f"Error procesando control {control.id}: {str(control_error)}")
-                    continue
-            
-            return APIResponse.success(
-                data=controls_data,
-                message=f"Se encontraron {len(controls_data)} controles"
+            # Usar método optimizado del modelo
+            pagination = Control.get_all_paginated(
+                page=page,
+                per_page=per_page
             )
+            
+            # Retornar con información de paginación
+            return pagination
             
         except Exception as e:
             logger.error(f"Error obteniendo controles: {str(e)}")
@@ -277,22 +344,19 @@ class ControlsList(Resource):
             
             # Validar estado de salud
             try:
-                health_status = HealtStatus(data['healt_status'])
+                health_status = HealthStatus(data['healt_status'])
             except ValueError:
                 return APIResponse.validation_error(
                     {'healt_status': f'Estado de salud inválido: {data["healt_status"]}. Valores permitidos: Excelente, Bueno, Regular, Malo'}
                 )
             
-            # Crear nuevo control
-            new_control = Control(
+            # Crear nuevo control usando Control.create para centralizar commits/validaciones
+            new_control = Control.create(
                 checkup_date=checkup_date,
                 healt_status=health_status,
                 description=data['description'],
                 animal_id=data['animal_id']
             )
-            
-            db.session.add(new_control)
-            db.session.commit()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
@@ -485,8 +549,8 @@ class FieldDetail(Resource):
             
             field_info = f"{field.name} - {field.ubication}"
             
-            db.session.delete(field)
-            db.session.commit()
+            # Use model delete to centralize commit and cascading behavior
+            field.delete()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
@@ -586,7 +650,7 @@ class ControlDetail(Resource):
             
             if 'healt_status' in data:
                 try:
-                    health_status = HealtStatus(data['healt_status'])
+                    health_status = HealthStatus(data['healt_status'])
                     control.healt_status = health_status
                 except ValueError:
                     return APIResponse.validation_error(
@@ -820,8 +884,8 @@ class FieldsList(Resource):
             
             # Los campos area y capacity son strings, no se validan numéricamente
             
-            # Crear nuevo campo
-            new_field = Fields(
+            # Crear nuevo campo usando Fields.create
+            new_field = Fields.create(
                 name=data['name'],
                 ubication=data['ubication'],
                 capacity=data['capacity'],
@@ -831,9 +895,6 @@ class FieldsList(Resource):
                 area=data['area'],
                 food_type_id=data.get('food_type_id')
             )
-            
-            db.session.add(new_field)
-            db.session.commit()
             
             logger.info(
                 f"Campo creado: {new_field.name} "
@@ -950,16 +1011,13 @@ class DiseasesList(Resource):
                     details={'disease': data['disease']}
                 )
             
-            # Crear nueva enfermedad
-            new_disease = Diseases(
+            # Crear nueva enfermedad usando Diseases.create
+            new_disease = Diseases.create(
                 disease=data['disease'],
                 description=data.get('description', ''),
                 symptoms=data.get('symptoms', ''),
                 treatment=data.get('treatment', '')
             )
-            
-            db.session.add(new_disease)
-            db.session.commit()
             
             logger.info(
                 f"Enfermedad creada: {new_disease.disease} "
@@ -1011,7 +1069,7 @@ class GeneticImprovementsList(Resource):
     def get(self):
         """Obtener lista de mejoras genéticas"""
         try:
-            improvements = GeneticImprovements.query.order_by(GeneticImprovements.genetic_event_techique).all()
+            improvements = GeneticImprovements.query.order_by(GeneticImprovements.genetic_event_technique).all()
             
             improvements_data = ResponseFormatter.format_model_list(improvements)
             
@@ -1054,20 +1112,17 @@ class GeneticImprovementsList(Resource):
             from flask_jwt_extended import get_jwt
             user_claims = get_jwt()
             
-            # Crear nueva mejora genética
-            new_improvement = GeneticImprovements(
-                genetic_event_techique=data['improvement_type'],
+            # Crear nueva mejora genética usando create
+            new_improvement = GeneticImprovements.create(
+                genetic_event_technique=data['improvement_type'],
                 details=data.get('description', ''),
                 results=data.get('expected_result', ''),
                 date=datetime.strptime(data.get('date', datetime.now().strftime('%Y-%m-%d')), '%Y-%m-%d').date(),
                 animal_id=data['animal_id']
             )
             
-            db.session.add(new_improvement)
-            db.session.commit()
-            
             logger.info(
-                f"Mejora genética creada: {new_improvement.genetic_event_techique} "
+                f"Mejora genética creada: {new_improvement.genetic_event_technique} "
                 f"por administrador {user_claims.get('identification')}"
             )
             
@@ -1075,7 +1130,7 @@ class GeneticImprovementsList(Resource):
             
             return APIResponse.created(
                 data=improvement_data,
-                message=f"Mejora genética '{new_improvement.genetic_event_techique}' creada exitosamente"
+                message=f"Mejora genética '{new_improvement.genetic_event_technique}' creada exitosamente"
             )
             
         except IntegrityError as e:
@@ -1163,7 +1218,7 @@ class GeneticImprovementDetail(Resource):
             
             # Actualizar campos
             if 'improvement_type' in data:
-                improvement.genetic_event_techique = data['improvement_type']
+                improvement.genetic_event_technique = data['improvement_type']
             if 'description' in data:
                 improvement.details = data['description']
             if 'expected_result' in data:
@@ -1177,7 +1232,7 @@ class GeneticImprovementDetail(Resource):
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
-                f"Mejora genética actualizada: {improvement.genetic_event_techique} "
+                f"Mejora genética actualizada: {improvement.genetic_event_technique} "
                 f"por usuario {user_id}"
             )
             
@@ -1222,11 +1277,10 @@ class GeneticImprovementDetail(Resource):
             
             current_user = get_jwt_identity()
             
-            improvement_info = f"{improvement.genetic_event_techique} - {improvement.date}"
+            improvement_info = f"{improvement.genetic_event_technique} - {improvement.date}"
             animal_record = improvement.animals.record if improvement.animals else "N/A"
             
-            db.session.delete(improvement)
-            db.session.commit()
+            improvement.delete()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
@@ -1310,16 +1364,13 @@ class FoodTypesList(Resource):
             data = request.get_json()
             current_user = get_jwt_identity()
             
-            # Crear nuevo tipo de alimento
-            new_food_type = FoodTypes(
+            # Crear nuevo tipo de alimento usando create
+            new_food_type = FoodTypes.create(
                 food_type=data['food_type'],
                 description=data.get('description', ''),
                 nutritional_value=data.get('nutritional_value', ''),
                 cost_per_kg=data.get('cost_per_kg')
             )
-            
-            db.session.add(new_food_type)
-            db.session.commit()
             
             logger.info(
                 f"Tipo de alimento creado: {new_food_type.food_type} "

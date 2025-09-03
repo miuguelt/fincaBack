@@ -12,9 +12,7 @@ from app.utils.response_handler import APIResponse, ResponseFormatter
 from app.utils.validators import (
     RequestValidator, PerformanceLogger, SecurityValidator
 )
-from app.utils.cache_manager import (
-    cache_query_result, invalidate_cache_on_change, QueryOptimizer
-)
+from app.utils.cache_manager import cache_query_result, invalidate_cache_on_change
 from app.utils.etag_cache import etag_cache, conditional_cache
 
 # Crear el namespace
@@ -100,27 +98,79 @@ class SpeciesList(Resource):
     def get(self):
         """Obtener lista de especies"""
         try:
-            # Obtener filtros
-            name_filter = request.args.get('name')
+            # Usar método optimizado para namespaces
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 50, type=int), 100)
             
-            # Construir consulta
-            query = Species.query
-            
-            if name_filter:
-                query = query.filter(Species.name.ilike(f"%{name_filter}%"))
-            
-            species = query.order_by(Species.name).all()
-            
-            # Formatear respuesta
-            species_data = ResponseFormatter.format_model_list(species)
+            # Usar método optimizado del modelo
+            pagination = Species.get_all_paginated(
+                page=page,
+                per_page=per_page
+            )
             
             return APIResponse.success(
-                data=species_data,
-                message=f"Se encontraron {len(species)} especies"
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} especies"
             )
             
         except Exception as e:
             logger.error(f"Error obteniendo especies: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+
+# ============================================================================
+# ENDPOINT DE ESTADÍSTICAS DE BREEDS Y SPECIES
+# ============================================================================
+
+@breeds_species_ns.route('/statistics')
+class BreedsSpeciesStatistics(Resource):
+    @breeds_species_ns.doc(
+        'get_breeds_species_statistics',
+        description='''
+        **Obtener estadísticas de razas y especies**
+        
+        Retorna estadísticas consolidadas de especies y razas en el sistema.
+        
+        **Información incluida:**
+        - Total de especies registradas
+        - Total de razas por especie
+        - Distribución de animales por raza
+        - Especies más populares
+        ''',
+        security=['Bearer', 'Cookie'],
+        responses={
+            200: 'Estadísticas de razas y especies',
+            401: 'Token JWT requerido o inválido',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def get(self):
+        """Obtener estadísticas de razas y especies"""
+        try:
+            # Obtener estadísticas de especies y razas
+            species_stats = Species.get_statistics()
+            breeds_stats = Breeds.get_statistics()
+            
+            return APIResponse.success(
+                data={
+                    'species': species_stats,
+                    'breeds': breeds_stats,
+                    'summary': {
+                        'total_species': species_stats.get('total_species', 0),
+                        'total_breeds': breeds_stats.get('total_breeds', 0),
+                        'most_popular_species': species_stats.get('most_popular', 'N/A'),
+                        'most_popular_breed': breeds_stats.get('most_popular', 'N/A')
+                    }
+                },
+                message='Estadísticas de razas y especies obtenidas exitosamente'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas de razas y especies: {str(e)}")
             return APIResponse.error(
                 message="Error interno del servidor",
                 status_code=500,
@@ -180,11 +230,8 @@ class SpeciesList(Resource):
                     details={'name': data['name']}
                 )
             
-            # Crear nueva especie
-            new_species = Species(name=data['name'])
-            
-            db.session.add(new_species)
-            db.session.commit()
+            # Crear nueva especie usando Species.create
+            new_species = Species.create(name=data['name'])
             
             logger.info(
                 f"Especie creada: {new_species.name} "
@@ -249,7 +296,7 @@ class SpeciesDetail(Resource):
             
             return APIResponse.success(
                 data=species_data,
-                message=f"Información de especie '{species.species}' obtenida exitosamente"
+                message=f"Información de especie '{species.name}' obtenida exitosamente"
             )
             
         except Exception as e:
@@ -297,9 +344,9 @@ class SpeciesDetail(Resource):
             
             # Validar que no exista otra especie con el mismo nombre
             existing_species = Species.query.filter(
-                Species.species.ilike(data['species']),
+                Species.name.ilike(data['name']),
                 Species.id != species_id
-            ).first()
+            ).first() if 'name' in data else None
             
             if existing_species:
                 return APIResponse.conflict(
@@ -308,13 +355,14 @@ class SpeciesDetail(Resource):
                 )
             
             # Actualizar especie
-            old_name = species.species
-            species.species = data['species']
+            old_name = species.name
+            if 'name' in data:
+                species.name = data['name']
             
             db.session.commit()
             
             logger.info(
-                f"Especie actualizada: '{old_name}' -> '{species.species}' "
+                f"Especie actualizada: '{old_name}' -> '{species.name}' "
                 f"por administrador {current_user.get('identification')}"
             )
             
@@ -385,9 +433,8 @@ class SpeciesDetail(Resource):
                     }
                 )
             
-            species_name = species.species
-            db.session.delete(species)
-            db.session.commit()
+            species_name = species.name
+            species.delete()
             
             logger.info(
                 f"Especie eliminada: '{species_name}' "
@@ -457,41 +504,19 @@ class BreedsList(Resource):
     def get(self):
         """Obtener lista de razas con paginación y filtros"""
         try:
-            # Obtener parámetros
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 20))
-            name_filter = request.args.get('name')
-            species_id = request.args.get('species_id')
+            # Usar método optimizado para namespaces
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 50, type=int), 100)
             
-            # Construir consulta con join a especies
-            query = db.session.query(Breeds).join(Species)
-            
-            # Aplicar filtros
-            if name_filter:
-                query = query.filter(Breeds.name.ilike(f"%{name_filter}%"))
-            
-            if species_id:
-                query = query.filter(Breeds.species_id == species_id)
-            
-            # Aplicar paginación
-            breeds, total, page, per_page = QueryOptimizer.optimize_pagination(
-                query.order_by(Breeds.name), page, per_page
+            # Usar método optimizado del modelo
+            pagination = Breeds.get_all_paginated(
+                page=page,
+                per_page=per_page
             )
             
-            # Formatear datos con información de especies
-            breeds_data = []
-            for breed in breeds:
-                breed_dict = ResponseFormatter.format_model(breed)
-                if breed.species:
-                    breed_dict['species'] = ResponseFormatter.format_model(breed.species)
-                breeds_data.append(breed_dict)
-            
-            return APIResponse.paginated_success(
-                data=breeds_data,
-                page=page,
-                per_page=per_page,
-                total=total,
-                message=f"Se encontraron {total} razas"
+            return APIResponse.success(
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} razas"
             )
             
         except ValueError as e:
@@ -566,14 +591,11 @@ class BreedsList(Resource):
                     }
                 )
             
-            # Crear nueva raza
-            new_breed = Breeds(
+            # Crear nueva raza usando Breeds.create
+            new_breed = Breeds.create(
                 name=data['name'],
                 species_id=data['species_id']
             )
-            
-            db.session.add(new_breed)
-            db.session.commit()
             
             logger.info(
                 f"Raza creada: {new_breed.name} ({species.name}) "
@@ -640,7 +662,7 @@ class BreedDetail(Resource):
             
             return APIResponse.success(
                 data=breed_data,
-                message=f"Información de raza '{breed.breed}' obtenida exitosamente"
+                message=f"Información de raza '{breed.name}' obtenida exitosamente"
             )
             
         except Exception as e:
@@ -694,25 +716,23 @@ class BreedDetail(Resource):
                 breed.species_id = data['species_id']
             
             # Si se actualiza el nombre, verificar unicidad
-            if 'breed' in data:
+            if 'name' in data:
                 existing_breed = Breeds.query.filter(
-                    Breeds.breed.ilike(data['breed']),
+                    Breeds.name.ilike(data['name']),
                     Breeds.species_id == breed.species_id,
                     Breeds.id != breed_id
                 ).first()
-                
                 if existing_breed:
                     return APIResponse.conflict(
                         message="Ya existe otra raza con ese nombre en esta especie",
-                        details={'breed': data['breed']}
+                        details={'name': data['name']}
                     )
-                
-                breed.breed = data['breed']
+                breed.name = data['name']
             
             db.session.commit()
             
             logger.info(
-                f"Raza actualizada: {breed.breed} "
+                f"Raza actualizada: {breed.name} "
                 f"por administrador {current_user.get('identification')}"
             )
             
@@ -787,11 +807,11 @@ class BreedDetail(Resource):
                     }
                 )
             
-            breed_name = breed.breed
-            species_name = breed.species.species if breed.species else "N/A"
+            breed_name = breed.name
+            species_name = breed.species.name if breed.species else "N/A"
             
-            db.session.delete(breed)
-            db.session.commit()
+            # Use model delete to centralize commit and cascade handling
+            breed.delete()
             
             logger.info(
                 f"Raza eliminada: '{breed_name}' ({species_name}) "
@@ -848,14 +868,14 @@ class BreedsBySpecies(Resource):
                 return APIResponse.not_found("Especie")
             
             # Obtener razas de la especie
-            breeds = Breeds.query.filter_by(species_id=species_id).order_by(Breeds.breed).all()
+            breeds = Breeds.query.filter_by(species_id=species_id).order_by(Breeds.name).all()
             
             # Formatear respuesta
             breeds_data = ResponseFormatter.format_model_list(breeds)
             
             return APIResponse.success(
                 data=breeds_data,
-                message=f"Se encontraron {len(breeds)} razas de {species.species}"
+                message=f"Se encontraron {len(breeds)} razas de {species.name}"
             )
             
         except Exception as e:

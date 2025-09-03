@@ -51,6 +51,22 @@
             opacity: 0.9;
         }
 
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+
+        .alert {
+            text-align: left;
+            margin-top: 2rem;
+            border-radius: 15px;
+        }
+
+        .alert ul {
+            margin-bottom: 0;
+        }
+
         .card {
             border: none;
             border-radius: 15px;
@@ -220,8 +236,20 @@
     <!-- Hero Section -->
     <section class="hero-section" id="overview">
         <div class="container text-center">
-            <h1><i class="fas fa-api me-3"></i>API Documentation</h1>
-            <p class="lead">Sistema de gestión ganadera con arquitectura RESTful moderna</p>
+            <h1>📚 Documentación de la API - Sistema de Gestión Ganadera</h1>
+            <p class="subtitle">API RESTful completa para la gestión integral de fincas ganaderas - Versión Optimizada 2.0</p>
+            
+            <div class="alert alert-success">
+                <h4>🚀 Nuevas Características v2.0</h4>
+                <ul>
+                    <li><strong>Namespaces Optimizados:</strong> Todos los endpoints han sido optimizados con nuevos métodos de consulta</li>
+                    <li><strong>Estadísticas Avanzadas:</strong> Nuevos endpoints de estadísticas en todos los namespaces</li>
+                    <li><strong>Relaciones Completas:</strong> Namespace dedicado para gestión de relaciones entre entidades</li>
+                    <li><strong>Analytics Mejorado:</strong> Dashboard con métricas avanzadas y alertas inteligentes</li>
+                    <li><strong>Rendimiento Optimizado:</strong> Consultas N+1 eliminadas, paginación eficiente, cache inteligente</li>
+                    <li><strong>Validaciones Robustas:</strong> Validaciones centralizadas y mensajes de error descriptivos</li>
+                </ul>
+            </div>
             <div class="row mt-4">
                 <div class="col-md-4">
                     <div class="feature-icon">
@@ -243,6 +271,42 @@
                     </div>
                     <h5>RESTful API</h5>
                     <p>Endpoints estándar y bien documentados</p>
+                </div>
+            </div>
+            
+            <!-- Nuevos Namespaces v2.0 -->
+            <div class="row mt-5">
+                <div class="col-md-3">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3><i class="fas fa-link text-success"></i> Relations</h3>
+                            <p>Gestión de relaciones entre entidades</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3><i class="fas fa-dna text-info"></i> Breeds & Species</h3>
+                            <p>Catálogo genético optimizado</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3><i class="fas fa-users text-warning"></i> Users</h3>
+                            <p>Gestión completa de usuarios</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center h-100">
+                        <div class="card-body">
+                            <h3><i class="fas fa-chart-bar text-danger"></i> Statistics</h3>
+                            <p>Estadísticas avanzadas por namespace</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

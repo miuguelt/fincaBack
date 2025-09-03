@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
 Script para probar el rendimiento de los endpoints optimizados
-y verificar que el sistema de caché ETag funcione correctamente.
+Este archivo es un script de integración y se omite durante pytest.
 """
+
+import pytest
+pytest.skip("Integration performance script - skipped during pytest runs", allow_module_level=True)
 
 import requests
 import time

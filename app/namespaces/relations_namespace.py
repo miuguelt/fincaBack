@@ -22,7 +22,7 @@ from app.utils.validators import (
     RequestValidator, PerformanceLogger, SecurityValidator
 )
 from app.utils.cache_manager import (
-    cache_query_result, invalidate_cache_on_change, QueryOptimizer
+    cache_query_result, invalidate_cache_on_change
 )
 
 # Crear el namespace
@@ -179,32 +179,20 @@ class AnimalDiseasesList(Resource):
     def get(self):
         """Obtener lista de enfermedades por animal con filtros y paginación"""
         try:
-            # Consulta simplificada sin filtros complejos
-            animal_diseases = AnimalDiseases.query.all()
+            # Paginación
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 50, type=int), 100)
             
-            # Formatear datos básicos
-            animal_diseases_data = []
-            for animal_disease in animal_diseases:
-                try:
-                    disease_dict = {
-                        'id': animal_disease.id,
-                        'animal_id': animal_disease.animal_id,
-                        'disease_id': animal_disease.disease_id,
-                        'instructor_id': animal_disease.instructor_id,
-                        'diagnosis_date': animal_disease.diagnosis_date.strftime('%Y-%m-%d') if animal_disease.diagnosis_date else None,
-                        'status': animal_disease.status,
-                        'animal_record': animal_disease.animals.record if animal_disease.animals else None,
-                        'disease_name': animal_disease.diseases.name if animal_disease.diseases else None,
-                        'instructor_name': animal_disease.instructors.fullname if animal_disease.instructors else None
-                    }
-                    animal_diseases_data.append(disease_dict)
-                except Exception as item_error:
-                    logger.error(f"Error procesando enfermedad {animal_disease.id}: {str(item_error)}")
-                    continue
+            # Usar método optimizado del modelo
+            pagination = AnimalDiseases.get_all_paginated(
+                page=page,
+                per_page=per_page,
+                filters=request.args
+            )
             
             return APIResponse.success(
-                data=animal_diseases_data,
-                message=f"Se encontraron {len(animal_diseases_data)} registros de enfermedades"
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} relaciones animal-enfermedad"
             )
             
         except ValueError as e:
@@ -213,6 +201,66 @@ class AnimalDiseasesList(Resource):
             )
         except Exception as e:
             logger.error(f"Error obteniendo enfermedades por animal: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+
+# ============================================================================
+# ENDPOINT DE ESTADÍSTICAS DE RELACIONES
+# ============================================================================
+
+@relations_ns.route('/statistics')
+class RelationsStatistics(Resource):
+    @relations_ns.doc(
+        'get_relations_statistics',
+        description='''
+        **Obtener estadísticas de relaciones**
+        
+        Retorna estadísticas consolidadas de todas las relaciones entre entidades.
+        
+        **Información incluida:**
+        - Estadísticas de diagnósticos animal-enfermedad
+        - Estadísticas de asignaciones animal-campo
+        - Estadísticas de medicamentos en tratamientos
+        - Estadísticas de vacunas en tratamientos
+        ''',
+        security=['Bearer', 'Cookie'],
+        responses={
+            200: 'Estadísticas de relaciones completas',
+            401: 'Token JWT requerido o inválido',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def get(self):
+        """Obtener estadísticas de relaciones"""
+        try:
+            # Obtener estadísticas de todos los modelos de relaciones
+            animal_diseases_stats = AnimalDiseases.get_statistics()
+            animal_fields_stats = AnimalFields.get_statistics()
+            treatment_medications_stats = TreatmentMedications.get_statistics()
+            treatment_vaccines_stats = TreatmentVaccines.get_statistics()
+            
+            return APIResponse.success(
+                data={
+                    'animal_diseases': animal_diseases_stats,
+                    'animal_fields': animal_fields_stats,
+                    'treatment_medications': treatment_medications_stats,
+                    'treatment_vaccines': treatment_vaccines_stats,
+                    'summary': {
+                        'total_diagnoses': animal_diseases_stats.get('total', 0),
+                        'total_field_assignments': animal_fields_stats.get('total', 0),
+                        'total_medication_combinations': treatment_medications_stats.get('total', 0),
+                        'total_vaccine_combinations': treatment_vaccines_stats.get('total', 0)
+                    }
+                },
+                message='Estadísticas de relaciones obtenidas exitosamente'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas de relaciones: {str(e)}")
             return APIResponse.error(
                 message="Error interno del servidor",
                 status_code=500,
@@ -293,8 +341,8 @@ class AnimalDiseasesList(Resource):
                     }
                 )
             
-            # Crear nueva relación animal-enfermedad
-            new_animal_disease = AnimalDiseases(
+            # Crear nueva relación animal-enfermedad usando create to centralize commits/validation
+            new_animal_disease = AnimalDiseases.create(
                 animal_id=data['animal_id'],
                 disease_id=data['disease_id'],
                 diagnosis_date=diagnosis_date,
@@ -302,9 +350,6 @@ class AnimalDiseasesList(Resource):
                 status=data.get('status', 'Activo'),
                 notes=data.get('notes', '')
             )
-            
-            db.session.add(new_animal_disease)
-            db.session.commit()
             
             logger.info(
                 f"Enfermedad registrada: {disease.disease} en animal {animal.record} "
@@ -392,32 +437,20 @@ class AnimalFieldsList(Resource):
     def get(self):
         """Obtener lista de asignaciones animal-campo"""
         try:
-            # Consulta simplificada sin filtros complejos
-            animal_fields = AnimalFields.query.all()
-            
-            # Formatear datos básicos
-            animal_fields_data = []
-            for animal_field in animal_fields:
-                try:
-                    field_dict = {
-                        'id': animal_field.id,
-                        'animal_id': animal_field.animal_id,
-                        'field_id': animal_field.field_id,
-                        'assignment_date': animal_field.start_date.strftime('%Y-%m-%d') if animal_field.start_date else None,
-                        'removal_date': animal_field.end_date.strftime('%Y-%m-%d') if animal_field.end_date else None,
-                        'duration': animal_field.duration,
-                        'status': animal_field.status,
-                        'animal_record': animal_field.animals.record if animal_field.animals else None,
-                        'field_name': animal_field.fields.name if animal_field.fields else None
-                    }
-                    animal_fields_data.append(field_dict)
-                except Exception as item_error:
-                    logger.error(f"Error procesando asignación {animal_field.id}: {str(item_error)}")
-                    continue
+            # Paginación y filtros
+            pagination = AnimalFields.get_all_paginated(
+                page=request.args.get('page', 1, type=int),
+                per_page=request.args.get('per_page', 20, type=int),
+                animal_id=request.args.get('animal_id', type=int),
+                field_id=request.args.get('field_id', type=int),
+                active_only=request.args.get('active_only', type=bool),
+                start_date=request.args.get('start_date'),
+                end_date=request.args.get('end_date')
+            )
             
             return APIResponse.success(
-                data=animal_fields_data,
-                message=f"Se encontraron {len(animal_fields_data)} asignaciones animal-campo"
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} asignaciones animal-campo"
             )
             
         except ValueError as e:
@@ -533,8 +566,8 @@ class AnimalFieldsList(Resource):
                         {'removal_date': 'La fecha de remoción debe ser posterior a la fecha de asignación'}
                     )
             
-            # Crear nueva asignación
-            new_assignment = AnimalFields(
+            # Crear nueva asignación usando create
+            new_assignment = AnimalFields.create(
                 animal_id=data['animal_id'],
                 field_id=data['field_id'],
                 assignment_date=assignment_date,
@@ -542,9 +575,6 @@ class AnimalFieldsList(Resource):
                 reason=data.get('reason', ''),
                 notes=data.get('notes', '')
             )
-            
-            db.session.add(new_assignment)
-            db.session.commit()
             
             logger.info(
                 f"Animal asignado: {animal.record} a campo {field.field} "
@@ -624,53 +654,18 @@ class TreatmentMedicationsList(Resource):
     def get(self):
         """Obtener lista de medicamentos por tratamiento"""
         try:
-            # Obtener parámetros
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 20))
-            treatment_id = request.args.get('treatment_id')
-            medication_id = request.args.get('medication_id')
-            administration_route = request.args.get('administration_route')
-            
-            # Construir consulta con joins
-            query = db.session.query(TreatmentMedications).join(Treatments).join(Medications)
-            
-            # Aplicar filtros
-            if treatment_id:
-                query = query.filter(TreatmentMedications.treatment_id == treatment_id)
-            
-            if medication_id:
-                query = query.filter(TreatmentMedications.medication_id == medication_id)
-            
-            if administration_route:
-                query = query.filter(TreatmentMedications.administration_route == administration_route)
-            
-            # Aplicar paginación
-            treatment_medications, total, page, per_page = QueryOptimizer.optimize_pagination(
-                query.order_by(TreatmentMedications.id.desc()), page, per_page
+            # Paginación y filtros
+            pagination = TreatmentMedications.get_all_paginated(
+                page=request.args.get('page', 1, type=int),
+                per_page=request.args.get('per_page', 20, type=int),
+                treatment_id=request.args.get('treatment_id', type=int),
+                medication_id=request.args.get('medication_id', type=int),
+                administration_route=request.args.get('administration_route')
             )
             
-            # Formatear datos con información relacionada
-            treatment_medications_data = []
-            for tm in treatment_medications:
-                tm_dict = ResponseFormatter.format_model(tm)
-                
-                # Agregar información relacionada
-                if tm.treatment:
-                    tm_dict['treatment_diagnosis'] = tm.treatment.diagnosis
-                    if tm.treatment.animal:
-                        tm_dict['animal_record'] = tm.treatment.animal.record
-                
-                if tm.medication:
-                    tm_dict['medication_name'] = tm.medication.medication
-                
-                treatment_medications_data.append(tm_dict)
-            
-            return APIResponse.paginated_success(
-                data=treatment_medications_data,
-                page=page,
-                per_page=per_page,
-                total=total,
-                message=f"Se encontraron {total} medicamentos en tratamientos"
+            return APIResponse.success(
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} medicamentos en tratamientos"
             )
             
         except Exception as e:
@@ -737,8 +732,8 @@ class TreatmentMedicationsList(Resource):
                     {'duration_days': 'La duración debe ser mayor a 0'}
                 )
             
-            # Crear nueva asociación
-            new_tm = TreatmentMedications(
+            # Crear nueva asociación usando create
+            new_tm = TreatmentMedications.create(
                 treatment_id=data['treatment_id'],
                 medication_id=data['medication_id'],
                 dosage=data['dosage'],
@@ -747,9 +742,6 @@ class TreatmentMedicationsList(Resource):
                 administration_route=data.get('administration_route', 'Oral'),
                 notes=data.get('notes', '')
             )
-            
-            db.session.add(new_tm)
-            db.session.commit()
             
             logger.info(
                 f"Medicamento asociado: {medication.medication} a tratamiento {treatment.diagnosis} "
@@ -813,49 +805,17 @@ class TreatmentVaccinesList(Resource):
     def get(self):
         """Obtener lista de vacunas por tratamiento"""
         try:
-            # Obtener parámetros
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 20))
-            treatment_id = request.args.get('treatment_id')
-            vaccine_id = request.args.get('vaccine_id')
-            
-            # Construir consulta con joins
-            query = db.session.query(TreatmentVaccines).join(Treatments).join(Vaccines)
-            
-            # Aplicar filtros
-            if treatment_id:
-                query = query.filter(TreatmentVaccines.treatment_id == treatment_id)
-            
-            if vaccine_id:
-                query = query.filter(TreatmentVaccines.vaccine_id == vaccine_id)
-            
-            # Aplicar paginación
-            treatment_vaccines, total, page, per_page = QueryOptimizer.optimize_pagination(
-                query.order_by(TreatmentVaccines.id.desc()), page, per_page
+            # Paginación y filtros
+            pagination = TreatmentVaccines.get_all_paginated(
+                page=request.args.get('page', 1, type=int),
+                per_page=request.args.get('per_page', 20, type=int),
+                treatment_id=request.args.get('treatment_id', type=int),
+                vaccine_id=request.args.get('vaccine_id', type=int)
             )
             
-            # Formatear datos con información relacionada
-            treatment_vaccines_data = []
-            for tv in treatment_vaccines:
-                tv_dict = ResponseFormatter.format_model(tv)
-                
-                # Agregar información relacionada
-                if tv.treatment:
-                    tv_dict['treatment_diagnosis'] = tv.treatment.diagnosis
-                    if tv.treatment.animal:
-                        tv_dict['animal_record'] = tv.treatment.animal.record
-                
-                if tv.vaccine:
-                    tv_dict['vaccine_name'] = tv.vaccine.name
-                
-                treatment_vaccines_data.append(tv_dict)
-            
-            return APIResponse.paginated_success(
-                data=treatment_vaccines_data,
-                page=page,
-                per_page=per_page,
-                total=total,
-                message=f"Se encontraron {total} vacunas en tratamientos"
+            return APIResponse.success(
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} vacunas en tratamientos"
             )
             
         except Exception as e:
@@ -916,8 +876,8 @@ class TreatmentVaccinesList(Resource):
                         {'expiry_date': 'La fecha de vencimiento debe ser futura'}
                     )
             
-            # Crear nueva asociación
-            new_tv = TreatmentVaccines(
+            # Crear nueva asociación usando create
+            new_tv = TreatmentVaccines.create(
                 treatment_id=data['treatment_id'],
                 vaccine_id=data['vaccine_id'],
                 dose=data['dose'],
@@ -926,9 +886,6 @@ class TreatmentVaccinesList(Resource):
                 expiry_date=expiry_date,
                 notes=data.get('notes', '')
             )
-            
-            db.session.add(new_tv)
-            db.session.commit()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(

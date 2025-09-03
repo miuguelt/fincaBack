@@ -5,7 +5,8 @@ from app.models.animals import Animals, Sex, AnimalStatus
 from app.models.user import User, Role
 from app.models.treatments import Treatments
 from app.models.vaccinations import Vaccinations
-from app.models.control import Control, HealtStatus
+from app.models.control import Control, HealthStatus
+# HealtStatus es ahora un alias de HealthStatus para compatibilidad
 from app.models.breeds import Breeds
 from app.models.species import Species
 from app.models.diseases import Diseases
@@ -19,7 +20,7 @@ import logging
 # Importar utilidades de optimización
 from app.utils.response_handler import APIResponse, ResponseFormatter
 from app.utils.validators import PerformanceLogger, SecurityValidator
-from app.utils.cache_manager import cache_query_result, QueryOptimizer
+from app.utils.cache_manager import cache_query_result
 
 # Crear el namespace
 analytics_ns = Namespace(
@@ -93,27 +94,42 @@ class DashboardStats(Resource):
     def get(self):
         """Obtener estadísticas principales del dashboard"""
         try:
-            # Estadísticas básicas simplificadas
-            total_animals = Animals.query.count()
-            total_treatments = Treatments.query.count()
-            total_vaccinations = Vaccinations.query.count()
-            total_users = User.query.count()
+            # Usar métodos optimizados de estadísticas de todos los modelos
+            animals_stats = Animals.get_statistics_for_namespace()
+            treatments_stats = Treatments.get_statistics_for_namespace()
+            vaccinations_stats = Vaccinations.get_statistics_for_namespace()
+            control_stats = Control.get_statistics_for_namespace()
+            users_stats = User.get_statistics_for_namespace()
             
-            # Datos básicos sin filtros complejos
+            # Consolidar estadísticas del dashboard
             dashboard_data = {
-                'total_animals': total_animals,
-                'total_treatments': total_treatments,
-                'total_vaccinations': total_vaccinations,
-                'total_users': total_users,
-                'active_animals': total_animals,  # Simplificado
-                'sold_animals': 0,  # Simplificado
-                'deceased_animals': 0,  # Simplificado
-                'active_users': total_users,  # Simplificado
-                'recent_treatments_week': 0,  # Simplificado
-                'recent_vaccinations_week': 0,  # Simplificado
-                'recent_activities': [],  # Simplificado
-                'health_alerts': [],  # Simplificado
-                'productivity_summary': {}  # Simplificado
+                'total_animals': animals_stats.get('total_animals', 0),
+                'active_animals': animals_stats.get('status_distribution', {}).get('Vivo', {}).get('count', 0),
+                'sold_animals': animals_stats.get('status_distribution', {}).get('Vendido', {}).get('count', 0),
+                'deceased_animals': animals_stats.get('status_distribution', {}).get('Muerto', {}).get('count', 0),
+                'total_treatments': treatments_stats.get('total_treatments', 0),
+                'total_vaccinations': vaccinations_stats.get('total_vaccinations', 0),
+                'total_controls': control_stats.get('total_controls', 0),
+                'total_users': users_stats.get('total_users', 0),
+                'active_users': users_stats.get('active_users', 0),
+                'animals_by_status': animals_stats.get('status_distribution', {}),
+                'animals_by_sex': animals_stats.get('sex_distribution', {}),
+                'health_summary': control_stats.get('health_distribution', {}),
+                'recent_treatments_week': treatments_stats.get('recent_week_count', 0),
+                'recent_vaccinations_week': vaccinations_stats.get('recent_week_count', 0),
+                'monthly_activity': {
+                    'treatments': treatments_stats.get('monthly_treatments', {}),
+                    'vaccinations': vaccinations_stats.get('monthly_vaccinations', {}),
+                    'controls': control_stats.get('monthly_controls', {})
+                },
+                'alerts': {
+                    'mortality_rate': animals_stats.get('summary', {}).get('mortality_rate', 0),
+                    'animals_needing_attention': control_stats.get('animals_needing_attention', 0)
+                },
+                'productivity_summary': {
+                    'average_weight': animals_stats.get('average_weight', 0),
+                    'weight_trends': animals_stats.get('weight_trends', {})
+                }
             }
             
             return APIResponse.success(
@@ -222,12 +238,12 @@ class SystemAlerts(Resource):
                     Control.control_date
                 ).join(Control).filter(
                     Animals.status == AnimalStatus.Vivo,
-                    Control.healt_status.in_([HealtStatus.Malo, HealtStatus.Regular]),
+                    Control.healt_status.in_([HealthStatus.Malo, HealthStatus.Regular]),
                     Control.control_date >= current_date - timedelta(days=30)
                 ).order_by(desc(Control.control_date)).all()
                 
                 for animal in critical_health:
-                    priority = 'high' if animal.healt_status == HealtStatus.Malo else 'medium'
+                    priority = 'high' if animal.healt_status == HealthStatus.Malo else 'medium'
                     
                     alerts.append({
                         'id': f'critical_health_{animal.id}',
@@ -251,13 +267,13 @@ class SystemAlerts(Resource):
                 animals_need_vaccination = db.session.query(
                     Animals.id,
                     Animals.record,
-                    func.max(Vaccinations.vaccination_date).label('last_vaccination')
+                    func.max(Vaccinations.application_date).label('last_vaccination')
                 ).outerjoin(Vaccinations).filter(
                     Animals.status == AnimalStatus.Vivo
                 ).group_by(
                     Animals.id, Animals.record
                 ).having(
-                    func.coalesce(func.max(Vaccinations.vaccination_date), '1900-01-01') < six_months_ago
+                    func.coalesce(func.max(Vaccinations.application_date), '1900-01-01') < six_months_ago
                 ).all()
                 
                 for animal in animals_need_vaccination:
@@ -673,7 +689,7 @@ class AnimalMedicalHistory(Resource):
             # Obtener vacunaciones
             vaccinations_query = db.session.query(
                 Vaccinations.id,
-                Vaccinations.vaccination_date,
+                Vaccinations.application_date,
                 Vaccinations.dose,
                 Vaccines.vaccine,
                 User.fullname.label('applied_by')
@@ -682,12 +698,12 @@ class AnimalMedicalHistory(Resource):
             ).filter(Vaccinations.animal_id == animal_id)
             
             if start_date:
-                vaccinations_query = vaccinations_query.filter(Vaccinations.vaccination_date >= start_date)
+                vaccinations_query = vaccinations_query.filter(Vaccinations.application_date >= start_date)
             if end_date:
-                vaccinations_query = vaccinations_query.filter(Vaccinations.vaccination_date <= end_date)
+                vaccinations_query = vaccinations_query.filter(Vaccinations.application_date <= end_date)
             
             vaccinations = vaccinations_query.order_by(
-                desc(Vaccinations.vaccination_date)
+                desc(Vaccinations.application_date)
             ).limit(limit).all()
             
             # Obtener controles
@@ -731,7 +747,7 @@ class AnimalMedicalHistory(Resource):
             for vaccination in vaccinations:
                 timeline.append({
                     'type': 'vaccination',
-                    'date': vaccination.vaccination_date.isoformat(),
+                    'date': vaccination.application_date.isoformat(),
                     'title': f'Vacunación: {vaccination.vaccine}',
                     'description': f'Dosis: {vaccination.dose}',
                     'details': {
@@ -811,7 +827,7 @@ class AnimalMedicalHistory(Resource):
                 'vaccinations': [
                     {
                         'id': v.id,
-                        'date': v.vaccination_date.isoformat(),
+                        'date': v.application_date.isoformat(),
                         'vaccine': v.vaccine,
                         'dose': v.dose,
                         'applied_by': v.applied_by
@@ -863,7 +879,7 @@ class AnimalMedicalHistory(Resource):
                 })
             
             # Estado de salud preocupante
-            if controls[0].healt_status in [HealtStatus.Malo, HealtStatus.Regular]:
+            if controls[0].healt_status in [HealthStatus.Malo, HealthStatus.Regular]:
                 alerts.append({
                     'type': 'danger',
                     'message': f'Estado de salud: {controls[0].healt_status.value}',
@@ -998,14 +1014,14 @@ class ProductionStatistics(Resource):
             group_stats = {}
             if group_by == 'breed':
                 group_stats = db.session.query(
-                    Breeds.breed,
+                    Breeds.name,
                     func.avg(Control.weight).label('avg_weight'),
                     func.count(func.distinct(Animals.id)).label('animal_count')
                 ).join(Animals).join(Control).filter(
                     Control.control_date >= start_date,
                     Animals.status == AnimalStatus.Vivo
-                ).group_by(Breeds.breed).all()
-                
+                ).group_by(Breeds.name).all()
+
                 group_stats = {
                     breed: {
                         'avg_weight': round(avg_weight, 2),
@@ -1103,7 +1119,7 @@ class ProductionStatistics(Resource):
         
         # Animales con estado de salud malo o regular
         unhealthy_animals = db.session.query(Control).filter(
-            Control.healt_status.in_([HealtStatus.Malo, HealtStatus.Regular])
+            Control.healt_status.in_([HealthStatus.Malo, HealthStatus.Regular])
         ).join(Animals).filter(
             Animals.status == AnimalStatus.Vivo
         ).count()
@@ -1186,9 +1202,9 @@ class AnimalStatistics(Resource):
             
             # Estadísticas por raza
             breed_stats = db.session.query(
-                Breeds.breed,
+                Breeds.name,
                 func.count(Animals.id).label('count')
-            ).join(Animals).group_by(Breeds.breed).order_by(
+            ).join(Animals).group_by(Breeds.name).order_by(
                 desc(func.count(Animals.id))
             ).limit(10).all()
             
@@ -1321,7 +1337,7 @@ class HealthStatistics(Resource):
                 Treatments.treatment_date >= start_date
             )
             vaccination_query = db.session.query(Vaccinations).filter(
-                Vaccinations.vaccination_date >= start_date
+                Vaccinations.application_date >= start_date
             )
             
             if animal_id:
@@ -1342,14 +1358,14 @@ class HealthStatistics(Resource):
             
             # Vacunaciones por mes
             vaccinations_by_month = db.session.query(
-                extract('year', Vaccinations.vaccination_date).label('year'),
-                extract('month', Vaccinations.vaccination_date).label('month'),
+                extract('year', Vaccinations.application_date).label('year'),
+                extract('month', Vaccinations.application_date).label('month'),
                 func.count(Vaccinations.id).label('count')
             ).filter(
-                Vaccinations.vaccination_date >= start_date
+                Vaccinations.application_date >= start_date
             ).group_by(
-                extract('year', Vaccinations.vaccination_date),
-                extract('month', Vaccinations.vaccination_date)
+                extract('year', Vaccinations.application_date),
+                extract('month', Vaccinations.application_date)
             ).order_by('year', 'month').all()
             
             # Estados de salud más recientes

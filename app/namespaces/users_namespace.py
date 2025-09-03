@@ -14,7 +14,7 @@ from app.utils.validators import (
     RequestValidator, PerformanceLogger, SecurityValidator
 )
 from app.utils.cache_manager import (
-    cache_query_result, invalidate_cache_on_change, QueryOptimizer
+    cache_query_result, invalidate_cache_on_change
 )
 
 # Crear el namespace
@@ -120,55 +120,36 @@ class UserList(Resource):
     def get(self):
         """Obtener lista de usuarios con filtros opcionales"""
         try:
-            # Obtener parámetros de paginación
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 20))
-            
-            # Obtener filtros de la petición
-            filters = QueryOptimizer.get_request_filters()
-            
-            # Validar filtros específicos
-            if 'role' in filters and filters['role'] not in ['Aprendiz', 'Instructor', 'Administrador']:
-                return APIResponse.validation_error(
-                    {'role': 'Rol debe ser: Aprendiz, Instructor o Administrador'}
-                )
-            
-            # Construir consulta base
-            query = User.query
-            
-            # Aplicar filtros optimizados
-            if 'fullname' in filters:
-                query = query.filter(User.fullname.ilike(f"%{filters['fullname']}%"))
-            
-            if 'role' in filters:
-                try:
-                    role_enum = Role(filters['role'])
-                    query = query.filter(User.role == role_enum)
-                except ValueError:
-                    return APIResponse.validation_error(
-                        {'role': f'Rol inválido: {filters["role"]}'}
-                    )
-            
-            if 'status' in filters:
-                query = query.filter(User.status == filters['status'])
-            
-            # Aplicar paginación optimizada
-            users, total, page, per_page = QueryOptimizer.optimize_pagination(
-                query, page, per_page
-            )
-            
-            # Formatear datos para respuesta
-            users_data = ResponseFormatter.format_model_list(
-                users, exclude_fields=['password']
-            )
-            
-            # Retornar respuesta paginada
-            return APIResponse.paginated_success(
-                data=users_data,
+            # Argumentos de paginación y filtros
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 50, type=int), 100)
+
+            # Usar método paginado y optimizado del modelo base
+            pagination = User.get_paginated(
                 page=page,
                 per_page=per_page,
-                total=total,
-                message=f"Se encontraron {total} usuarios"
+                filters=request.args,
+                search_query=request.args.get('search'),
+                sort_by=request.args.get('sort_by', 'id'),
+                sort_order=request.args.get('sort_order', 'asc')
+            )
+            
+            users_data = [
+                user.to_json(include_relations=True, include_sensitive=False) 
+                for user in pagination.items
+            ]
+            
+            return APIResponse.success(
+                data={
+                    'users': users_data,
+                    'total': pagination.total,
+                    'page': pagination.page,
+                    'per_page': pagination.per_page,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev
+                },
+                message=f"Se encontraron {pagination.total} usuarios"
             )
             
         except ValueError as e:
@@ -178,6 +159,62 @@ class UserList(Resource):
             )
         except Exception as e:
             logger.error(f"Error listando usuarios: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+
+# ============================================================================
+# ENDPOINT DE ESTADÍSTICAS DE USUARIOS
+# ============================================================================
+
+@users_ns.route('/statistics')
+class UsersStatistics(Resource):
+    @users_ns.doc(
+        'get_users_statistics',
+        description='''
+        **Obtener estadísticas de usuarios**
+        
+        Retorna estadísticas consolidadas de usuarios del sistema.
+        
+        **Información incluida:**
+        - Total de usuarios por rol
+        - Usuarios activos vs inactivos
+        - Distribución de usuarios por estado
+        - Actividad reciente de usuarios
+        ''',
+        security=['Bearer', 'Cookie'],
+        responses={
+            200: 'Estadísticas de usuarios',
+            401: 'Token JWT requerido o inválido',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def get(self):
+        """Obtener estadísticas de usuarios"""
+        try:
+            # Obtener estadísticas de usuarios utilizando el método genérico
+            users_stats = User.get_statistics()
+            
+            return APIResponse.success(
+                data={
+                    'users': users_stats,
+                    'summary': {
+                        'total_users': users_stats.get('total_users', 0),
+                        'active_users': users_stats.get('active_users', 0),
+                        'inactive_users': users_stats.get('inactive_users', 0),
+                        'administrators': users_stats.get('role_distribution', {}).get('Administrador', 0),
+                        'instructors': users_stats.get('role_distribution', {}).get('Instructor', 0),
+                        'apprentices': users_stats.get('role_distribution', {}).get('Aprendiz', 0)
+                    }
+                },
+                message='Estadísticas de usuarios obtenidas exitosamente'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas de usuarios: {str(e)}")
             return APIResponse.error(
                 message="Error interno del servidor",
                 status_code=500,
@@ -262,11 +299,10 @@ class UserList(Resource):
                     {'role': f'Rol inválido: {data["role"]}. Valores permitidos: Aprendiz, Instructor, Administrador'}
                 )
             
-            # Hashear contraseña
+            # Hashear contraseña y delegar creación al modelo (valida y hace commit)
             hashed_password = generate_password_hash(data['password'])
             
-            # Crear nuevo usuario
-            new_user = User(
+            new_user = User.create(
                 identification=data['identification'],
                 fullname=data['fullname'],
                 password=hashed_password,
@@ -277,18 +313,13 @@ class UserList(Resource):
                 status=data['status']
             )
             
-            db.session.add(new_user)
-            db.session.commit()
-            
             logger.info(
                 f"Usuario creado: ID {new_user.identification} ({new_user.fullname}) "
                 f"por administrador {current_user_claims.get('identification')}"
             )
             
             # Formatear respuesta sin contraseña
-            user_data = ResponseFormatter.format_model(
-                new_user, exclude_fields=['password']
-            )
+            user_data = new_user.to_json()
             
             return APIResponse.created(
                 data=user_data,
@@ -348,10 +379,9 @@ class UserDetail(Resource):
     def get(self, user_id):
         """Obtener usuario por ID"""
         try:
-            user = User.query.get(user_id)
+            user = User.get_by_id(user_id)
             if not user:
                 users_ns.abort(404, 'Usuario no encontrado')
-            
             return user.to_json()
             
         except Exception as e:
@@ -404,35 +434,29 @@ class UserDetail(Resource):
                 users_ns.abort(403, 'Se requiere rol de Administrador para actualizar usuarios')
             
             # Usar el user_id del path para actualizar al usuario correcto
-            user = User.query.get(user_id)
+            user = User.get_by_id(user_id)
             if not user:
                 users_ns.abort(404, 'Usuario no encontrado')
-            
-            data = request.get_json()
-            
-            # Actualizar campos proporcionados
-            if 'identification' in data:
-                user.identification = data['identification']
-            if 'fullname' in data:
-                user.fullname = data['fullname']
+
+            data = request.get_json() or {}
+
+            update_payload = {}
+            mapping_fields = ['identification', 'fullname', 'email', 'phone', 'address', 'status']
+            for field in mapping_fields:
+                if field in data:
+                    update_payload[field] = data[field]
+
             if 'password' in data:
-                user.password = generate_password_hash(data['password'])
-            if 'email' in data:
-                user.email = data['email']
-            if 'phone' in data:
-                user.phone = data['phone']
-            if 'address' in data:
-                user.address = data['address']
+                update_payload['password'] = generate_password_hash(data['password'])
             if 'role' in data:
                 try:
-                    user.role = Role(data['role'])
+                    update_payload['role'] = Role(data['role'])
                 except ValueError:
-                    users_ns.abort(400, f'Rol inválido: {data["role"]}. Valores permitidos: Aprendiz, Instructor, Administrador')
-            if 'status' in data:
-                user.status = data['status']
-            
-            db.session.commit()
-            
+                    users_ns.abort(400, f"Rol inválido: {data['role']}. Valores permitidos: Aprendiz, Instructor, Administrador")
+
+            if update_payload:
+                user.update(**update_payload)
+
             logger.info(f"Usuario {user_id} actualizado por {claims.get('identification')}")
             return user.to_json()
             
@@ -490,13 +514,10 @@ class UserDetail(Resource):
             if claims.get('role') != 'Administrador':
                 users_ns.abort(403, 'Se requiere rol de Administrador para eliminar usuarios')
             
-            user = User.query.get(user_id)
+            user = User.get_by_id(user_id)
             if not user:
                 users_ns.abort(404, 'Usuario no encontrado')
-            
-            db.session.delete(user)
-            db.session.commit()
-            
+            user.delete()
             logger.info(f"Usuario {user_id} eliminado por {claims.get('identification')}")
             return {'message': f'Usuario {user_id} eliminado exitosamente'}
             
@@ -605,71 +626,4 @@ class UserRoles(Resource):
             
         except Exception as e:
             logger.error(f"Error obteniendo distribución de roles: {str(e)}")
-            users_ns.abort(500, f'Error interno del servidor: {str(e)}')
-
-# ✅ AGREGADOS - Nuevos endpoints de compatibilidad
-
-@users_ns.route('/usersroles')
-class UsersRolesList(Resource):
-    @users_ns.doc(
-        'get_users_roles_compat',
-        description='Obtener distribución de usuarios por roles (ruta de compatibilidad)',
-        security=['Bearer', 'Cookie'],
-        responses={
-            200: 'Distribución de usuarios por roles',
-            401: 'Token JWT requerido o inválido',
-            500: 'Error interno del servidor'
-        }
-    )
-    @jwt_required()
-    def get(self):
-        """Obtener distribución de usuarios por roles (compatibilidad)"""
-        try:
-            aprendices = User.query.filter_by(role=Role.Aprendiz).count()
-            instructores = User.query.filter_by(role=Role.Instructor).count()
-            administradores = User.query.filter_by(role=Role.Administrador).count()
-            total_users = aprendices + instructores + administradores
-            
-            return {
-                'roles': {
-                    'Aprendiz': {'count': aprendices, 'percentage': round((aprendices / total_users * 100) if total_users > 0 else 0, 2)},
-                    'Instructor': {'count': instructores, 'percentage': round((instructores / total_users * 100) if total_users > 0 else 0, 2)},
-                    'Administrador': {'count': administradores, 'percentage': round((administradores / total_users * 100) if total_users > 0 else 0, 2)}
-                },
-                'total_users': total_users
-            }
-            
-        except Exception as e:
-            logger.error(f"Error obteniendo distribución de roles: {str(e)}")
-            users_ns.abort(500, f'Error interno del servidor: {str(e)}')
-
-@users_ns.route('/usersstatus')
-class UsersStatusList(Resource):
-    @users_ns.doc(
-        'get_users_status_compat',
-        description='Obtener estadísticas de usuarios por estado (ruta de compatibilidad)',
-        security=['Bearer', 'Cookie'],
-        responses={
-            200: 'Estadísticas de usuarios por estado',
-            401: 'Token JWT requerido o inválido',
-            500: 'Error interno del servidor'
-        }
-    )
-    @jwt_required()
-    def get(self):
-        """Obtener estadísticas de usuarios por estado (compatibilidad)"""
-        try:
-            active_users = User.query.filter_by(status=True).count()
-            inactive_users = User.query.filter_by(status=False).count()
-            total_users = active_users + inactive_users
-            
-            return {
-                'active_users': active_users,
-                'inactive_users': inactive_users,
-                'total_users': total_users,
-                'active_percentage': round((active_users / total_users * 100) if total_users > 0 else 0, 2)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error obteniendo estadísticas de usuarios: {str(e)}")
             users_ns.abort(500, f'Error interno del servidor: {str(e)}')

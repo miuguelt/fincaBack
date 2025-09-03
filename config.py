@@ -12,8 +12,51 @@ class Config:
     HOST = os.getenv('DB_HOST', 'localhost')
     PORT = os.getenv('DB_PORT', '3306')
     DATABASE = os.getenv('DB_NAME', 'finca_db')
-    SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}'
+    # Driver configurable por variable de entorno DB_DRIVER: pymysql | mysqldb | mysqlconnector
+    DB_DRIVER = os.getenv('DB_DRIVER', 'pymysql').lower()
+    if DB_DRIVER not in ('pymysql', 'mysqldb', 'mysqlconnector'):
+        DB_DRIVER = 'pymysql'
+    # Nota: mysqldb (mysqlclient) requiere compilación en Windows; fallback automático a PyMySQL si no instalado.
+    SQLALCHEMY_DATABASE_URI = f'mysql+{DB_DRIVER}://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    
+    # Configuraciones de optimización de base de datos
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 25,  # Incrementado para mejor concurrencia
+        'max_overflow': 40,  # Más conexiones de overflow
+        'pool_timeout': 20,  # Timeout más agresivo
+        'pool_recycle': 3600,  # Reciclar conexiones cada hora
+        'pool_pre_ping': True,  # Verificar conexiones antes de usar
+        'echo': False,  # Cambiar a True para debug de SQL
+        'connect_args': {
+            'charset': 'utf8mb4',
+            'autocommit': False,
+            'connect_timeout': 10,
+            'read_timeout': 30,
+            'write_timeout': 30,
+            'sql_mode': 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'
+        }
+    }
+    
+    # Configuraciones de cache optimizadas
+    CACHE_TYPE = 'simple'
+    CACHE_DEFAULT_TIMEOUT = 600  # 10 minutos para mejor rendimiento
+    CACHE_THRESHOLD = 1000  # Máximo número de entradas en caché
+    
+    # Configuraciones de rendimiento mejoradas
+    PERFORMANCE_MONITORING = True
+    SLOW_QUERY_THRESHOLD = 0.5  # Más estricto para detectar consultas lentas
+    QUERY_CACHE_ENABLED = True
+    QUERY_CACHE_TIMEOUT = 600  # 10 minutos
+    QUERY_CACHE_MAX_SIZE = 500  # Máximo número de consultas cacheadas
+    
+    # Configuraciones de compresión
+    COMPRESS_MIMETYPES = [
+        'text/html', 'text/css', 'text/xml', 'application/json',
+        'application/javascript', 'text/javascript', 'application/xml'
+    ]
+    COMPRESS_LEVEL = 6
+    COMPRESS_MIN_SIZE = 500
 
     # Configuración base de JWT
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', secrets.token_hex(32))

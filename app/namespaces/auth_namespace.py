@@ -95,8 +95,8 @@ class Login(Resource):
         if not user.status:
             auth_ns.abort(401, 'Usuario inactivo')
 
-        # Verificar contraseña
-        if not check_password_hash(user.password, password):
+        # Usar método optimizado del modelo para verificar contraseña
+        if not user.check_password(password):
             auth_ns.abort(401, 'Credenciales incorrectas')
 
         try:
@@ -121,7 +121,7 @@ class Login(Resource):
                 additional_claims=user_claims
             )
 
-            # Crear respuesta
+            # Crear respuesta usando formato optimizado para namespaces
             response_data = {
                 'message': 'Autenticación exitosa',
                 'user': user.to_json(),
@@ -173,18 +173,16 @@ class RefreshToken(Resource):
         """Renovar token de acceso usando refresh token"""
         try:
             # Obtener identity (string) y claims del token
-            user_id = get_jwt_identity()
-            from flask_jwt_extended import get_jwt
-            user_claims = get_jwt()
+            user_identity = get_jwt_identity()
 
             # Crear nuevo token de acceso con la misma estructura
             new_access_token = create_access_token(
-                identity=user_id,
+                identity=user_identity,
                 additional_claims={
-                    'id': user_claims.get('id'),
-                    'identification': user_claims.get('identification'),
-                    'role': user_claims.get('role'),
-                    'fullname': user_claims.get('fullname')
+                    'id': user_identity.get('id'),
+                    'identification': user_identity.get('identification'),
+                    'role': user_identity.get('role'),
+                    'fullname': user_identity.get('fullname')
                 },
                 expires_delta=current_app.config.get('JWT_ACCESS_TOKEN_EXPIRES', timedelta(hours=1))
             )
@@ -197,7 +195,7 @@ class RefreshToken(Resource):
             response = jsonify(response_data)
             set_access_cookies(response, new_access_token)
 
-            logger.info(f"Token renovado para usuario {user_claims.get('identification')}")
+            logger.info(f"Token renovado para usuario {user_identity.get('identification')}")
             return response
 
         except Exception as e:

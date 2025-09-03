@@ -98,6 +98,50 @@ class CacheManager:
         
         deleted_count = len(keys_to_delete)
         self._cache_stats['deletes'] += deleted_count
+        logger.info(f"Cache CLEAR_PATTERN: {pattern} - {deleted_count} entradas eliminadas")
+        return deleted_count
+    
+    def invalidate_by_table(self, table_name: str) -> int:
+        """
+        Invalida todas las entradas relacionadas con una tabla específica.
+        """
+        pattern = f"table_{table_name}"
+        return self.clear_pattern(pattern)
+    
+    def cleanup_expired(self) -> int:
+        """
+        Limpia entradas expiradas del caché.
+        """
+        now = datetime.utcnow()
+        expired_keys = [
+            key for key, entry in self._cache.items()
+            if entry['expires_at'] <= now
+        ]
+        
+        for key in expired_keys:
+            del self._cache[key]
+        
+        expired_count = len(expired_keys)
+        if expired_count > 0:
+            logger.info(f"Cache CLEANUP: {expired_count} entradas expiradas eliminadas")
+        
+        return expired_count
+    
+    def get_memory_usage(self) -> Dict[str, Any]:
+        """
+        Obtiene información sobre el uso de memoria del caché.
+        """
+        import sys
+        
+        total_size = sys.getsizeof(self._cache)
+        for key, value in self._cache.items():
+            total_size += sys.getsizeof(key) + sys.getsizeof(value)
+        
+        return {
+            'total_entries': len(self._cache),
+            'memory_bytes': total_size,
+            'memory_mb': round(total_size / (1024 * 1024), 2)
+        }
         logger.debug(f"Cache CLEAR PATTERN: {pattern} ({deleted_count} entries)")
         return deleted_count
     
@@ -297,102 +341,4 @@ def invalidate_cache_on_change(cache_patterns: List[str]):
     return decorator
 
 
-class QueryOptimizer:
-    """
-    Utilidades para optimizar consultas a la base de datos.
-    """
-    
-    @staticmethod
-    def optimize_pagination(query, page: int, per_page: int, max_per_page: int = 100):
-        """
-        Optimiza consultas paginadas.
-        
-        Args:
-            query: Query de SQLAlchemy
-            page: Página solicitada
-            per_page: Elementos por página
-            max_per_page: Máximo elementos por página
-        
-        Returns:
-            Tuple con (items, total, page, per_page)
-        """
-        # Validar parámetros
-        page = max(1, page)
-        per_page = min(max(1, per_page), max_per_page)
-        
-        # Calcular offset
-        offset = (page - 1) * per_page
-        
-        # Obtener total (con caché)
-        total = query.count()
-        
-        # Obtener items paginados
-        items = query.offset(offset).limit(per_page).all()
-        
-        return items, total, page, per_page
-    
-    @staticmethod
-    def apply_filters(query, filters: Dict[str, Any], model_class):
-        """
-        Aplica filtros de manera optimizada a una consulta.
-        
-        Args:
-            query: Query de SQLAlchemy
-            filters: Diccionario de filtros
-            model_class: Clase del modelo SQLAlchemy
-        
-        Returns:
-            Query filtrada
-        """
-        for field, value in filters.items():
-            if value is not None and hasattr(model_class, field):
-                column = getattr(model_class, field)
-                
-                # Filtros especiales
-                if field.endswith('_like') and isinstance(value, str):
-                    # Búsqueda parcial
-                    actual_field = field[:-5]  # Remover '_like'
-                    if hasattr(model_class, actual_field):
-                        actual_column = getattr(model_class, actual_field)
-                        query = query.filter(actual_column.ilike(f'%{value}%'))
-                elif field.startswith('min_') and isinstance(value, (int, float)):
-                    # Valor mínimo
-                    actual_field = field[4:]  # Remover 'min_'
-                    if hasattr(model_class, actual_field):
-                        actual_column = getattr(model_class, actual_field)
-                        query = query.filter(actual_column >= value)
-                elif field.startswith('max_') and isinstance(value, (int, float)):
-                    # Valor máximo
-                    actual_field = field[4:]  # Remover 'max_'
-                    if hasattr(model_class, actual_field):
-                        actual_column = getattr(model_class, actual_field)
-                        query = query.filter(actual_column <= value)
-                else:
-                    # Filtro exacto
-                    query = query.filter(column == value)
-        
-        return query
-    
-    @staticmethod
-    def get_request_filters() -> Dict[str, Any]:
-        """
-        Extrae filtros de los parámetros de la petición.
-        
-        Returns:
-            Diccionario con filtros válidos
-        """
-        filters = {}
-        
-        for key, value in request.args.items():
-            if value and value.strip():
-                # Convertir tipos básicos
-                if value.lower() in ['true', 'false']:
-                    filters[key] = value.lower() == 'true'
-                elif value.isdigit():
-                    filters[key] = int(value)
-                elif value.replace('.', '').isdigit():
-                    filters[key] = float(value)
-                else:
-                    filters[key] = value.strip()
-        
-        return filters
+# Clase QueryOptimizer eliminada por no tener usos reales; la lógica de filtrado/paginación se gestiona en BaseModel y endpoints.

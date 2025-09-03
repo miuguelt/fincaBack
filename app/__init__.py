@@ -15,6 +15,7 @@ from sqlalchemy import text
 # Importar middlewares de optimización
 from app.utils.middleware import RequestMiddleware, SecurityMiddleware, MetricsMiddleware
 from app.utils.cache_manager import cache
+from app.utils.db_optimization import init_db_optimizations
 
 # ====================================================================
 # 1. Inicialización de extensiones (sin enlazarlas a la app aún)
@@ -138,6 +139,10 @@ def create_app(config_name='production'):
     # Inicializa y enlaza las extensiones con la app
     db.init_app(app)
     jwt.init_app(app)
+    
+    # Inicializar optimizaciones de base de datos
+    init_db_optimizations(app)
+    logger.info("Database optimizations initialized")
 
     # Configura CORS con los orígenes definidos en la clase de configuración
     CORS(

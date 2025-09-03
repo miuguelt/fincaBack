@@ -103,6 +103,16 @@ class AnimalList(Resource):
         - `min_weight`: Peso mínimo en kg
         - `max_weight`: Peso máximo en kg
         
+        **Paginación optimizada:**
+        - `page`: Número de página (default: 1)
+        - `per_page`: Elementos por página (default: 50, max: 100)
+        
+        **Optimizaciones de rendimiento:**
+        - ✅ Consultas optimizadas con eager loading
+        - ✅ Índices de base de datos para filtros frecuentes
+        - ✅ Cache ETag para respuestas rápidas
+        - ✅ Paginación eficiente para grandes datasets
+        
         **Ejemplos de uso:**
         - `GET /animals/` - Todos los animales
         - `GET /animals/?record=BOV` - Animales con "BOV" en el registro
@@ -142,65 +152,18 @@ class AnimalList(Resource):
     def get(self):
         """Obtener inventario de animales con filtros opcionales"""
         try:
-            # Optimización: Usar eager loading para evitar consultas N+1
-            query = Animals.query.options(
-                joinedload(Animals.breed).joinedload(Breeds.species)
-            )
-            
-            # Aplicar filtros
-            record = request.args.get('record')
-            if record:
-                query = query.filter(Animals.record.ilike(f'%{record}%'))
-            
-            breeds_id = request.args.get('breeds_id')
-            if breeds_id:
-                try:
-                    breeds_id = int(breeds_id)
-                    query = query.filter(Animals.breeds_id == breeds_id)
-                except ValueError:
-                    animals_ns.abort(400, 'breeds_id debe ser un número entero')
-            
-            sex = request.args.get('sex')
-            if sex:
-                try:
-                    sex_enum = Sex(sex)
-                    query = query.filter(Animals.sex == sex_enum)
-                except ValueError:
-                    animals_ns.abort(400, f'Sexo inválido: {sex}. Valores permitidos: Hembra, Macho')
-            
-            status = request.args.get('status')
-            if status:
-                try:
-                    status_enum = AnimalStatus(status)
-                    query = query.filter(Animals.status == status_enum)
-                except ValueError:
-                    animals_ns.abort(400, f'Estado inválido: {status}. Valores permitidos: Vivo, Vendido, Muerto')
-            
-            min_weight = request.args.get('min_weight')
-            if min_weight:
-                try:
-                    min_weight = int(min_weight)
-                    query = query.filter(Animals.weight >= min_weight)
-                except ValueError:
-                    animals_ns.abort(400, 'min_weight debe ser un número entero')
-            
-            max_weight = request.args.get('max_weight')
-            if max_weight:
-                try:
-                    max_weight = int(max_weight)
-                    query = query.filter(Animals.weight <= max_weight)
-                except ValueError:
-                    animals_ns.abort(400, 'max_weight debe ser un número entero')
-            
-            # Paginación
+            # Argumentos de paginación y filtros
             page = request.args.get('page', 1, type=int)
-            per_page = min(request.args.get('per_page', 50, type=int), 100)  # Máximo 100 por página
+            per_page = min(request.args.get('per_page', 50, type=int), 100)
             
-            # Ejecutar consulta paginada
-            pagination = query.paginate(
+            # Usar método paginado y optimizado del modelo base
+            pagination = Animals.get_all_paginated(
                 page=page,
                 per_page=per_page,
-                error_out=False
+                filters=request.args,
+                search_query=request.args.get('search'),
+                sort_by=request.args.get('sort_by', 'idAnimal'),
+                sort_order=request.args.get('sort_order', 'asc')
             )
             
             return {
@@ -280,6 +243,11 @@ class AnimalList(Resource):
             
             data = request.get_json()
             
+            # Usar validaciones optimizadas del modelo
+            validation_errors = Animals.validate_for_namespace(data)
+            if validation_errors:
+                animals_ns.abort(422, {'message': 'Errores de validación', 'errors': validation_errors})
+            
             # Validar enums
             try:
                 sex_enum = Sex(data['sex'])
@@ -289,37 +257,11 @@ class AnimalList(Resource):
             # Usar el valor string directamente, el modelo se encargará de la conversión
             status_value = data.get('status', 'Vivo')
             
-            # Validar que la raza existe
-            breed = Breeds.query.get(data['breeds_id'])
-            if not breed:
-                animals_ns.abort(404, f'Raza con ID {data["breeds_id"]} no encontrada')
-            
-            # Validar padres si se proporcionan
-            if 'idFather' in data and data['idFather']:
-                father = Animals.query.get(data['idFather'])
-                if not father:
-                    animals_ns.abort(404, f'Padre con ID {data["idFather"]} no encontrado')
-                if father.sex != Sex.Macho:
-                    animals_ns.abort(400, 'El padre debe ser de sexo Macho')
-            
-            if 'idMother' in data and data['idMother']:
-                mother = Animals.query.get(data['idMother'])
-                if not mother:
-                    animals_ns.abort(404, f'Madre con ID {data["idMother"]} no encontrada')
-                if mother.sex != Sex.Hembra:
-                    animals_ns.abort(400, 'La madre debe ser de sexo Hembra')
-            
-            # Validar fecha de nacimiento
+            # Crear nuevo animal usando datos validados
             birth_date = datetime.strptime(data['birth_date'], '%Y-%m-%d').date()
-            if birth_date > datetime.now().date():
-                animals_ns.abort(400, 'La fecha de nacimiento no puede ser futura')
             
-            # Validar peso
-            if data['weight'] <= 0:
-                animals_ns.abort(400, 'El peso debe ser un valor positivo')
-            
-            # Crear nuevo animal (dejar que el modelo maneje el enum por defecto)
-            new_animal = Animals(
+            # Crear nuevo animal usando el método genérico del modelo (valida y hace commit)
+            create_kwargs = dict(
                 sex=sex_enum,
                 birth_date=birth_date,
                 weight=data['weight'],
@@ -328,13 +270,16 @@ class AnimalList(Resource):
                 idFather=data.get('idFather'),
                 idMother=data.get('idMother')
             )
-            
-            # Establecer status después de crear el objeto si se proporciona
-            if status_value and status_value != 'Vivo':
-                new_animal.status = AnimalStatus(status_value)
-            
-            db.session.add(new_animal)
-            db.session.commit()
+
+            # Incluir status como enum si se proporciona
+            if status_value:
+                try:
+                    create_kwargs['status'] = AnimalStatus(status_value)
+                except Exception:
+                    # dejar que la validación del modelo se encargue de errores
+                    create_kwargs['status'] = status_value
+
+            new_animal = Animals.create(**create_kwargs)
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(f"Animal registrado: {new_animal.record} por {user_id}")
@@ -392,14 +337,13 @@ class AnimalDetail(Resource):
     def get(self, animal_id):
         """Obtener animal por ID"""
         try:
-            # Optimización: Usar eager loading para evitar consultas N+1
-            animal = Animals.query.options(
-                joinedload(Animals.breed).joinedload(Breeds.species)
-            ).get(animal_id)
+            # Usar consulta optimizada del modelo
+            animal = Animals.get_by_id(animal_id, include_relations=True)
+            
             if not animal:
                 animals_ns.abort(404, 'Animal no encontrado')
             
-            return animal.to_json()
+            return animal.to_json(include_relations=True, namespace_format=True)
             
         except Exception as e:
             logger.error(f"Error obteniendo animal {animal_id}: {str(e)}")
@@ -455,67 +399,19 @@ class AnimalDetail(Resource):
             if current_user.get('role') != 'Administrador':
                 animals_ns.abort(403, 'Se requiere rol de Administrador para actualizar animales')
             
-            animal = Animals.query.get(animal_id)
+            animal = Animals.get_by_id(animal_id)
             if not animal:
                 animals_ns.abort(404, 'Animal no encontrado')
             
             data = request.get_json()
             
-            # Actualizar campos proporcionados
-            if 'sex' in data:
-                try:
-                    animal.sex = Sex(data['sex'])
-                except ValueError:
-                    animals_ns.abort(400, f'Sexo inválido: {data["sex"]}. Valores permitidos: Hembra, Macho')
-            
-            if 'birth_date' in data:
-                birth_date = datetime.strptime(data['birth_date'], '%Y-%m-%d').date()
-                if birth_date > datetime.now().date():
-                    animals_ns.abort(400, 'La fecha de nacimiento no puede ser futura')
-                animal.birth_date = birth_date
-            
-            if 'weight' in data:
-                if data['weight'] <= 0:
-                    animals_ns.abort(400, 'El peso debe ser un valor positivo')
-                animal.weight = data['weight']
-            
-            if 'record' in data:
-                animal.record = data['record']
-            
-            if 'status' in data:
-                try:
-                    animal.status = AnimalStatus(data['status'])
-                except ValueError:
-                    animals_ns.abort(400, f'Estado inválido: {data["status"]}. Valores permitidos: Vivo, Vendido, Muerto')
-            
-            if 'breeds_id' in data:
-                breed = Breeds.query.get(data['breeds_id'])
-                if not breed:
-                    animals_ns.abort(404, f'Raza con ID {data["breeds_id"]} no encontrada')
-                animal.breeds_id = data['breeds_id']
-            
-            if 'idFather' in data:
-                if data['idFather']:
-                    father = Animals.query.get(data['idFather'])
-                    if not father:
-                        animals_ns.abort(404, f'Padre con ID {data["idFather"]} no encontrado')
-                    if father.sex != Sex.Macho:
-                        animals_ns.abort(400, 'El padre debe ser de sexo Macho')
-                animal.idFather = data['idFather']
-            
-            if 'idMother' in data:
-                if data['idMother']:
-                    mother = Animals.query.get(data['idMother'])
-                    if not mother:
-                        animals_ns.abort(404, f'Madre con ID {data["idMother"]} no encontrada')
-                    if mother.sex != Sex.Hembra:
-                        animals_ns.abort(400, 'La madre debe ser de sexo Hembra')
-                animal.idMother = data['idMother']
-            
-            db.session.commit()
-            
-            logger.info(f"Animal {animal_id} actualizado por {current_user.get('identification')}")
-            return animal.to_json()
+            # Usar método update de BaseModel
+            try:
+                updated_animal = animal.update(data)
+                logger.info(f"Animal {animal_id} actualizado por {current_user.get('identification')}")
+                return updated_animal.to_json()
+            except ValueError as e:
+                animals_ns.abort(400, str(e))
             
         except IntegrityError as e:
             db.session.rollback()
@@ -575,15 +471,15 @@ class AnimalDetail(Resource):
             if current_user.get('role') != 'Administrador':
                 animals_ns.abort(403, 'Se requiere rol de Administrador para eliminar animales')
             
-            animal = Animals.query.get(animal_id)
+            animal = Animals.get_by_id(animal_id)
             if not animal:
                 animals_ns.abort(404, 'Animal no encontrado')
             
-            db.session.delete(animal)
-            db.session.commit()
+            record = animal.record  # Guardar antes de eliminar
+            animal.delete()
             
-            logger.info(f"Animal {animal_id} ({animal.record}) eliminado por {current_user.get('identification')}")
-            return {'message': f'Animal {animal.record} eliminado exitosamente'}
+            logger.info(f"Animal {animal_id} ({record}) eliminado por {current_user.get('identification')}")
+            return {'message': f'Animal {record} eliminado exitosamente'}
             
         except IntegrityError as e:
             db.session.rollback()
@@ -630,50 +526,8 @@ class AnimalStatusStats(Resource):
     def get(self):
         """Obtener estadísticas de animales por estado"""
         try:
-            # Contar por estado
-            vivos = Animals.query.filter_by(status=AnimalStatus.Vivo).all()
-            vendidos = Animals.query.filter_by(status=AnimalStatus.Vendido).all()
-            muertos = Animals.query.filter_by(status=AnimalStatus.Muerto).all()
-            
-            total_animals = len(vivos) + len(vendidos) + len(muertos)
-            
-            def get_stats(animals_list):
-                if not animals_list:
-                    return {
-                        'count': 0,
-                        'percentage': 0,
-                        'by_sex': {'Hembra': 0, 'Macho': 0},
-                        'average_weight': 0
-                    }
-                
-                hembras = len([a for a in animals_list if a.sex == Sex.Hembra])
-                machos = len([a for a in animals_list if a.sex == Sex.Macho])
-                avg_weight = sum(a.weight for a in animals_list) / len(animals_list)
-                
-                return {
-                    'count': len(animals_list),
-                    'percentage': round((len(animals_list) / total_animals * 100) if total_animals > 0 else 0, 2),
-                    'by_sex': {
-                        'Hembra': hembras,
-                        'Macho': machos
-                    },
-                    'average_weight': round(avg_weight, 2)
-                }
-            
-            return {
-                'status_distribution': {
-                    'Vivo': get_stats(vivos),
-                    'Vendido': get_stats(vendidos),
-                    'Muerto': get_stats(muertos)
-                },
-                'total_animals': total_animals,
-                'summary': {
-                    'active_inventory': len(vivos),
-                    'total_sales': len(vendidos),
-                    'total_deaths': len(muertos),
-                    'mortality_rate': round((len(muertos) / total_animals * 100) if total_animals > 0 else 0, 2)
-                }
-            }
+            # Usar método optimizado de estadísticas del modelo
+            return Animals.get_statistics_for_namespace()
             
         except Exception as e:
             logger.error(f"Error obteniendo estadísticas de animales: {str(e)}")

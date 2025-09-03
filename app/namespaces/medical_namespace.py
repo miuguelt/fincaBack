@@ -18,7 +18,7 @@ from app.utils.validators import (
     RequestValidator, PerformanceLogger, SecurityValidator
 )
 from app.utils.cache_manager import (
-    cache_query_result, invalidate_cache_on_change, QueryOptimizer
+    cache_query_result, invalidate_cache_on_change
 )
 
 # Crear el namespace
@@ -119,6 +119,71 @@ success_message_model = medical_ns.model('SuccessMessage', {
 })
 
 # ============================================================================
+# ENDPOINTS DE ESTADÍSTICAS MÉDICAS
+# ============================================================================
+
+@medical_ns.route('/statistics')
+class MedicalStatistics(Resource):
+    @medical_ns.doc(
+        'get_medical_statistics',
+        description='''
+        **Obtener estadísticas médicas completas**
+        
+        Retorna estadísticas consolidadas de tratamientos, vacunaciones, medicamentos y vacunas.
+        
+        **Información incluida:**
+        - Estadísticas de tratamientos por animal y período
+        - Estadísticas de vacunaciones por mes y vacunas más utilizadas
+        - Estadísticas de medicamentos más utilizados
+        - Estadísticas de vacunas más aplicadas
+        
+        **Casos de uso:**
+        - Dashboard médico
+        - Reportes de salud del hato
+        - Análisis de tendencias médicas
+        ''',
+        security=['Bearer', 'Cookie'],
+        responses={
+            200: 'Estadísticas médicas completas',
+            401: 'Token JWT requerido o inválido',
+            500: 'Error interno del servidor'
+        }
+    )
+    @jwt_required()
+    def get(self):
+        """Obtener estadísticas médicas completas"""
+        try:
+            # Obtener estadísticas de todos los modelos médicos
+            treatments_stats = Treatments.get_statistics()
+            vaccinations_stats = Vaccinations.get_statistics()
+            medications_stats = Medications.get_statistics()
+            vaccines_stats = Vaccines.get_statistics()
+            
+            return APIResponse.success(
+                data={
+                    'treatments': treatments_stats,
+                    'vaccinations': vaccinations_stats,
+                    'medications': medications_stats,
+                    'vaccines': vaccines_stats,
+                    'summary': {
+                        'total_treatments': treatments_stats.get('total', 0),
+                        'total_vaccinations': vaccinations_stats.get('total', 0),
+                        'total_medications': medications_stats.get('total', 0),
+                        'total_vaccines': vaccines_stats.get('total', 0)
+                    }
+                },
+                message="Estadísticas médicas obtenidas exitosamente"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas médicas: {str(e)}")
+            return APIResponse.error(
+                message="Error interno del servidor",
+                status_code=500,
+                details={'error': str(e)}
+            )
+
+# ============================================================================
 # ENDPOINTS DE TRATAMIENTOS
 # ============================================================================
 
@@ -165,31 +230,23 @@ class TreatmentsList(Resource):
     def get(self):
         """Obtener lista de tratamientos"""
         try:
-            # Consulta básica sin filtros complejos
-            treatments = Treatments.query.all()
+            # Argumentos de paginación y filtros
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 20, type=int), 100)
             
-            # Formatear datos básicos
-            treatments_data = []
-            for treatment in treatments:
-                try:
-                    treatment_dict = {
-                        'id': treatment.id,
-                        'start_date': treatment.start_date.strftime('%Y-%m-%d') if treatment.start_date else None,
-                        'end_date': treatment.end_date.strftime('%Y-%m-%d') if treatment.end_date else None,
-                        'description': treatment.description,
-                        'frequency': treatment.frequency,
-                        'observations': treatment.observations,
-                        'dosis': treatment.dosis,
-                        'animal_id': treatment.animal_id
-                    }
-                    treatments_data.append(treatment_dict)
-                except Exception as treatment_error:
-                    logger.error(f"Error procesando tratamiento {treatment.id}: {str(treatment_error)}")
-                    continue
+            # Usar método paginado y optimizado del modelo base
+            pagination = Treatments.get_all_paginated(
+                page=page,
+                per_page=per_page,
+                filters=request.args,
+                search_query=request.args.get('search'),
+                sort_by=request.args.get('sort_by', 'start_date'),
+                sort_order=request.args.get('sort_order', 'desc')
+            )
             
             return APIResponse.success(
-                data=treatments_data,
-                message=f"Se encontraron {len(treatments_data)} tratamientos"
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} tratamientos"
             )
             
         except Exception as e:
@@ -243,22 +300,14 @@ class TreatmentsList(Resource):
             data = request.get_json()
             current_user = get_jwt_identity()
             
-            # Verificar que el animal existe
-            animal = Animals.query.get(data['animal_id'])
-            if not animal:
-                return APIResponse.not_found("Animal")
-            
-            # Validar fecha
+            # Crear nuevo tratamiento usando datos validados
             start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
-            if start_date > datetime.now().date():
-                return APIResponse.validation_error(
-                    {'start_date': 'La fecha de inicio no puede ser futura'}
-                )
+            end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date() if data.get('end_date') else None
             
-            # Crear nuevo tratamiento
-            new_treatment = Treatments(
+            # Usar BaseModel.create para centralizar validaciones y commits
+            new_treatment = Treatments.create(
                 start_date=start_date,
-                end_date=datetime.strptime(data['end_date'], '%Y-%m-%d').date() if data.get('end_date') else None,
+                end_date=end_date,
                 description=data['description'],
                 frequency=data['frequency'],
                 observations=data['observations'],
@@ -266,23 +315,18 @@ class TreatmentsList(Resource):
                 animal_id=data['animal_id']
             )
             
-            db.session.add(new_treatment)
-            db.session.commit()
-            
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
-                f"Tratamiento creado: Animal {animal.record}, Descripción: {data['description']} "
-                f"por usuario {user_id}"
+                f"Tratamiento creado: Animal {new_treatment.animals.record if new_treatment.animals else data['animal_id']}, "
+                f"Descripción: {data['description']} por usuario {user_id}"
             )
             
-            # Formatear respuesta
-            treatment_data = ResponseFormatter.format_model(new_treatment)
-            if new_treatment.animals:
-                treatment_data['animal_record'] = new_treatment.animals.record
+            # Usar formato optimizado para namespaces
+            treatment_data = new_treatment.to_json()
             
             return APIResponse.created(
                 data=treatment_data,
-                message=f"Tratamiento registrado exitosamente para {animal.record}"
+                message=f"Tratamiento registrado exitosamente para animal ID {data['animal_id']}"
             )
             
         except ValueError as e:
@@ -324,22 +368,12 @@ class VaccinationDetail(Resource):
     def get(self, vaccination_id):
         """Obtener vacunación por ID"""
         try:
-            vaccination = Vaccinations.query.get(vaccination_id)
+            vaccination = Vaccinations.get_by_id(vaccination_id)
             if not vaccination:
                 return APIResponse.not_found("Vacunación")
             
-            # Formatear respuesta básica
-            vaccination_data = {
-                'id': vaccination.id,
-                'application_date': vaccination.application_date.strftime('%Y-%m-%d') if vaccination.application_date else None,
-                'animal_id': vaccination.animal_id,
-                'vaccine_id': vaccination.vaccine_id,
-                'apprentice_id': vaccination.apprentice_id,
-                'instructor_id': vaccination.instructor_id
-            }
-            
             return APIResponse.success(
-                data=vaccination_data,
+                data=vaccination.to_dict(),
                 message="Información de la vacunación obtenida exitosamente"
             )
             
@@ -371,49 +405,26 @@ class VaccinationDetail(Resource):
     def put(self, vaccination_id):
         """Actualizar vacunación"""
         try:
-            vaccination = Vaccinations.query.get(vaccination_id)
+            vaccination = Vaccinations.get_by_id(vaccination_id)
             if not vaccination:
                 return APIResponse.not_found("Vacunación")
             
             data = request.get_json()
             current_user = get_jwt_identity()
             
-            # Actualizar campos
-            if 'application_date' in data:
-                application_date = datetime.strptime(data['application_date'], '%Y-%m-%d').date()
-                vaccination.application_date = application_date
-            
-            if 'animal_id' in data:
-                vaccination.animal_id = data['animal_id']
-            
-            if 'vaccine_id' in data:
-                vaccination.vaccine_id = data['vaccine_id']
-            
-            if 'apprentice_id' in data:
-                vaccination.apprentice_id = data['apprentice_id']
-            
-            if 'instructor_id' in data:
-                vaccination.instructor_id = data['instructor_id']
-            
-            db.session.commit()
-            
-            user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
-            logger.info(f"Vacunación {vaccination_id} actualizada por usuario {user_id}")
-            
-            # Formatear respuesta
-            vaccination_data = {
-                'id': vaccination.id,
-                'application_date': vaccination.application_date.strftime('%Y-%m-%d') if vaccination.application_date else None,
-                'animal_id': vaccination.animal_id,
-                'vaccine_id': vaccination.vaccine_id,
-                'apprentice_id': vaccination.apprentice_id,
-                'instructor_id': vaccination.instructor_id
-            }
-            
-            return APIResponse.success(
-                data=vaccination_data,
-                message="Vacunación actualizada exitosamente"
-            )
+            # Usar método update de BaseModel
+            try:
+                updated_vaccination = vaccination.update(data)
+                
+                user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
+                logger.info(f"Vacunación {vaccination_id} actualizada por usuario {user_id}")
+                
+                return APIResponse.success(
+                    data=updated_vaccination.to_dict(),
+                    message="Vacunación actualizada exitosamente"
+                )
+            except ValueError as e:
+                return APIResponse.validation_error({'update_error': str(e)})
             
         except ValueError as e:
             return APIResponse.validation_error(
@@ -452,16 +463,14 @@ class VaccinationDetail(Resource):
     def delete(self, vaccination_id):
         """Eliminar vacunación"""
         try:
-            vaccination = Vaccinations.query.get(vaccination_id)
+            vaccination = Vaccinations.get_by_id(vaccination_id)
             if not vaccination:
                 return APIResponse.not_found("Vacunación")
             
             current_user = get_jwt_identity()
-            
             vaccination_info = f"Vacunación del {vaccination.application_date}"
             
-            db.session.delete(vaccination)
-            db.session.commit()
+            vaccination.delete()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(f"Vacunación {vaccination_id} eliminada: {vaccination_info} por usuario {user_id}")
@@ -538,8 +547,8 @@ class VaccinationDetail(Resource):
             if 'end_date' in data and data['end_date']:
                 end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
             
-            # Crear nuevo tratamiento
-            new_treatment = Treatments(
+            # Crear nuevo tratamiento usando Treatments.create para centralizar validaciones y commits
+            new_treatment = Treatments.create(
                 start_date=start_date,
                 end_date=end_date,
                 description=data['description'],
@@ -548,20 +557,17 @@ class VaccinationDetail(Resource):
                 dosis=data['dosis'],
                 animal_id=data['animal_id']
             )
-            
-            db.session.add(new_treatment)
-            db.session.commit()
-            
+
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
                 f"Tratamiento creado: {new_treatment.description} para animal {animal.record} "
                 f"por usuario {user_id}"
             )
-            
+
             # Formatear respuesta
             treatment_data = ResponseFormatter.format_model(new_treatment)
             treatment_data['animal_record'] = animal.record
-            
+
             return APIResponse.created(
                 data=treatment_data,
                 message=f"Tratamiento registrado exitosamente para {animal.record}"
@@ -648,63 +654,26 @@ class TreatmentDetail(Resource):
     def put(self, treatment_id):
         """Actualizar tratamiento"""
         try:
-            treatment = Treatments.query.get(treatment_id)
+            treatment = Treatments.get_by_id(treatment_id)
             if not treatment:
                 return APIResponse.not_found("Tratamiento")
             
             data = request.get_json()
             current_user = get_jwt_identity()
             
-            # Actualizar campos
-            if 'start_date' in data:
-                start_date = datetime.strptime(data['start_date'], '%Y-%m-%d').date()
-                if start_date > datetime.now().date():
-                    return APIResponse.validation_error(
-                        {'start_date': 'La fecha de inicio no puede ser futura'}
-                    )
-                treatment.start_date = start_date
-            
-            if 'end_date' in data:
-                if data['end_date']:
-                    treatment.end_date = datetime.strptime(data['end_date'], '%Y-%m-%d').date()
-                else:
-                    treatment.end_date = None
-            
-            if 'description' in data:
-                treatment.description = data['description']
-            
-            if 'frequency' in data:
-                treatment.frequency = data['frequency']
-            
-            if 'observations' in data:
-                treatment.observations = data['observations']
-            
-            if 'dosis' in data:
-                treatment.dosis = data['dosis']
-            
-            if 'animal_id' in data:
-                animal = Animals.query.get(data['animal_id'])
-                if not animal:
-                    return APIResponse.not_found("Animal")
-                treatment.animal_id = data['animal_id']
-            
-            db.session.commit()
-            
-            user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
-            logger.info(
-                f"Tratamiento actualizado: ID {treatment_id} "
-                f"por usuario {user_id}"
-            )
-            
-            # Formatear respuesta
-            treatment_data = ResponseFormatter.format_model(treatment)
-            if treatment.animals:
-                treatment_data['animal_record'] = treatment.animals.record
-            
-            return APIResponse.success(
-                data=treatment_data,
-                message="Tratamiento actualizado exitosamente"
-            )
+            # Usar método update de BaseModel
+            try:
+                updated_treatment = treatment.update(data)
+                
+                user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
+                logger.info(f"Tratamiento {treatment_id} actualizado por usuario {user_id}")
+                
+                return APIResponse.success(
+                    data=updated_treatment.to_dict(),
+                    message="Tratamiento actualizado exitosamente"
+                )
+            except ValueError as e:
+                return APIResponse.validation_error({'update_error': str(e)})
             
         except ValueError as e:
             return APIResponse.validation_error(
@@ -743,7 +712,7 @@ class TreatmentDetail(Resource):
     def delete(self, treatment_id):
         """Eliminar tratamiento"""
         try:
-            treatment = Treatments.query.get(treatment_id)
+            treatment = Treatments.get_by_id(treatment_id)
             if not treatment:
                 return APIResponse.not_found("Tratamiento")
             
@@ -752,8 +721,7 @@ class TreatmentDetail(Resource):
             treatment_info = f"{treatment.description} - {treatment.start_date}"
             animal_record = treatment.animals.record if treatment.animals else "N/A"
             
-            db.session.delete(treatment)
-            db.session.commit()
+            treatment.delete()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
@@ -825,35 +793,22 @@ class VaccinationsList(Resource):
     def get(self):
         """Obtener lista de vacunaciones con filtros y paginación"""
         try:
-            # Consulta básica sin filtros complejos
-            vaccinations = Vaccinations.query.all()
+            # Paginación
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 20, type=int), 100)
             
-            # Formatear datos básicos
-            vaccinations_data = []
-            for vaccination in vaccinations:
-                try:
-                    vaccination_dict = {
-                        'id': vaccination.id,
-                        'application_date': vaccination.application_date.strftime('%Y-%m-%d') if vaccination.application_date else None,
-                        'animal_id': vaccination.animal_id,
-                        'vaccine_id': vaccination.vaccine_id,
-                        'apprentice_id': vaccination.apprentice_id,
-                        'instructor_id': vaccination.instructor_id
-                    }
-                    vaccinations_data.append(vaccination_dict)
-                except Exception as vaccination_error:
-                    logger.error(f"Error procesando vacunación {vaccination.id}: {str(vaccination_error)}")
-                    continue
+            # Usar método optimizado del modelo
+            pagination = Vaccinations.get_all_paginated(
+                page=page,
+                per_page=per_page,
+                filters=request.args
+            )
             
             return APIResponse.success(
-                data=vaccinations_data,
-                message=f"Se encontraron {len(vaccinations_data)} vacunaciones"
+                data=pagination,
+                message=f"Se encontraron {pagination['total']} vacunaciones"
             )
             
-        except ValueError as e:
-            return APIResponse.validation_error(
-                {'date_format': 'Formato de fecha inválido. Use YYYY-MM-DD'}
-            )
         except Exception as e:
             logger.error(f"Error obteniendo vacunaciones: {str(e)}")
             return APIResponse.error(
@@ -940,8 +895,13 @@ class VaccinationsList(Resource):
                 instructor_id=data['instructor_id']
             )
             
-            db.session.add(new_vaccination)
-            db.session.commit()
+            new_vaccination = Vaccinations.create(
+                application_date=application_date,
+                animal_id=data['animal_id'],
+                vaccine_id=data['vaccine_id'],
+                apprentice_id=apprentice_id,
+                instructor_id=data['instructor_id']
+            )
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(
@@ -1068,14 +1028,11 @@ class MedicationsList(Resource):
                     details={'medication': data['medication']}
                 )
             
-            # Crear nuevo medicamento
-            new_medication = Medications(
+            # Crear nuevo medicamento usando Medications.create para centralizar commits y validaciones
+            new_medication = Medications.create(
                 medication=data['medication'],
                 description=data.get('description', '')
             )
-            
-            db.session.add(new_medication)
-            db.session.commit()
             
             logger.info(
                 f"Medicamento creado: {new_medication.medication} "
@@ -1190,8 +1147,8 @@ class VaccinesList(Resource):
                     details={'vaccine': data['vaccine']}
                 )
             
-            # Crear nueva vacuna
-            new_vaccine = Vaccines(
+            # Crear nueva vacuna usando Vaccines.create para centralizar commits y validaciones
+            new_vaccine = Vaccines.create(
                 name=data['vaccine'],
                 dosis=data.get('dosis', '1ml'),
                 route_administration=data.get('route_administration', 'Intramuscular'),
@@ -1200,9 +1157,6 @@ class VaccinesList(Resource):
                 national_plan=data.get('national_plan', 'Plan Nacional'),
                 target_disease_id=data.get('target_disease_id', 1)
             )
-            
-            db.session.add(new_vaccine)
-            db.session.commit()
             
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(

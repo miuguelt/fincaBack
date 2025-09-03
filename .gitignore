@@ -183,3 +183,6 @@ cython_debug/
 .cursorindexingignore
 endpoint_test_report.json
 test_endpoints.py
+API_ENDPOINTS_DOCUMENTATION.md
+*.py
+test_performance.py
