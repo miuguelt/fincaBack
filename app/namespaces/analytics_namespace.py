@@ -1388,15 +1388,15 @@ class HealthStatistics(Resource):
             
             # Uso de medicamentos
             medication_usage = db.session.query(
-                Medications.medication,
+                Medications.name,
                 func.count(Treatments.id).label('usage_count')
             ).join(
                 # Aquí asumo que hay una relación entre tratamientos y medicamentos
                 # Si no existe, se puede crear o usar el campo diagnosis
-                Treatments, Treatments.diagnosis.ilike(func.concat('%', Medications.medication, '%'))
+                Treatments, Treatments.diagnosis.ilike(func.concat('%', Medications.name, '%'))
             ).filter(
                 Treatments.treatment_date >= start_date
-            ).group_by(Medications.medication).order_by(
+            ).group_by(Medications.name).order_by(
                 desc(func.count(Treatments.id))
             ).limit(10).all()
             
