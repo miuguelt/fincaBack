@@ -56,26 +56,95 @@ class Control(BaseModel, TimestampMixin):
         if self.checkup_date and self.checkup_date > date.today():
             errors.append("La fecha de control no puede ser futura.")
         
-        if 'animal_id' in self.get_dirty_fields():
-            if not Animals.exists(self.animal_id):
-                errors.append(f"El animal con id {self.animal_id} no existe.")
+        # Validar que el animal existe
+        if self.animal_id and not Animals.exists(self.animal_id):
+            errors.append(f"El animal con id {self.animal_id} no existe.")
 
         if errors:
             raise ValidationError("; ".join(errors))
 
-    def to_json(self, include_relations: List[str] = None) -> Dict[str, Any]:
-        """
-        Serializa el objeto Control a un diccionario JSON, permitiendo la inclusión
-        selectiva de relaciones para optimizar la carga de datos.
+    @classmethod
+    def validate_for_namespace(cls, data: Dict[str, Any]) -> List[str]:
+        """Validación específica para uso en namespaces"""
+        from app.utils.model_validators import MedicalValidationRules, ValidationRules
+        
+        errors = []
+        
+        # Validar fecha de control
+        if 'checkup_date' in data:
+            errors.extend(MedicalValidationRules.validate_medical_date(
+                data['checkup_date'], "fecha de control"
+            ))
+        
+        # Validar estado de salud
+        if 'healt_status' in data:
+            errors.extend(ValidationRules.validate_enum_value(
+                data['healt_status'], HealthStatus, "estado de salud"
+            ))
+        
+        # Validar descripción
+        if 'description' in data:
+            errors.extend(ValidationRules.validate_string_length(
+                data['description'], "descripción", min_length=1, max_length=255
+            ))
+        
+        # Validar que el animal existe
+        if 'animal_id' in data:
+            errors.extend(ValidationRules.validate_foreign_key_exists(
+                data['animal_id'], Animals, "animal"
+            ))
+        
+        return errors
 
+    def to_json(self, include_relations: List[str] = None, namespace_format: bool = False) -> Dict[str, Any]:
+        """
+        Serialización JSON optimizada para namespaces.
+        
         Args:
-            include_relations (List[str], optional): Lista de nombres de relaciones
-                a incluir en la serialización. Defaults to None.
-
-        Returns:
-            Dict[str, Any]: Diccionario con los datos del control.
+            include_relations: Relaciones a incluir
+            namespace_format: Si usar formato específico para namespaces
         """
-        return self.to_dict(include_relations=include_relations)
+        if namespace_format:
+            result = {
+                'id': self.id,
+                'checkup_date': self.checkup_date.isoformat() if self.checkup_date else None,
+                'healt_status': self.healt_status.value if self.healt_status else None,
+                'description': self.description,
+                'animal_id': self.animal_id,
+                'created_at': self.created_at.isoformat() if self.created_at else None,
+                'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            }
+            
+            # Incluir información básica del animal si está disponible
+            if self.animals:
+                result['animal'] = {
+                    'id': self.animals.id,
+                    'record': self.animals.record,
+                    'sex': self.animals.sex.value if self.animals.sex else None,
+                    'status': self.animals.status.value if self.animals.status else None
+                }
+            
+            return result
+        else:
+            # Usar serialización base
+            return super().to_json(include_relations)
+    
+    @classmethod
+    def get_optimized_query(cls, include_relations: List[str] = None):
+        """Consulta optimizada con eager loading para namespaces"""
+        query = cls.query
+        
+        # Siempre incluir animal básico para evitar consultas N+1
+        query = query.options(joinedload(cls.animals))
+        
+        # Incluir relaciones adicionales según se solicite
+        if include_relations:
+            if 'animal.breed' in include_relations:
+                query = query.options(
+                    joinedload(cls.animals).joinedload(Animals.breed)
+                )
+        
+        return query
     
     @classmethod
     def get_recent_controls(cls, days=30, limit=100):
