@@ -102,8 +102,163 @@ class Animals(BaseModel):
         if self.idFather and self.idMother and self.idFather == self.idMother:
             errors.append("El padre y la madre deben ser animales diferentes")
         
+        # Validar que la raza exista
+        if self.breeds_id and not Breeds.query.get(self.breeds_id):
+            errors.append("La raza especificada no existe")
+        
+        # Validar que el padre exista si se especifica
+        if self.idFather and not Animals.query.get(self.idFather):
+            errors.append("El padre especificado no existe")
+        
+        # Validar que la madre exista si se especifica
+        if self.idMother and not Animals.query.get(self.idMother):
+            errors.append("La madre especificada no existe")
+        
         if errors:
             raise ValidationError("; ".join(errors))
+    
+    @classmethod
+    def validate_for_namespace(cls, data: Dict[str, Any]) -> List[str]:
+        """Validación específica para uso en namespaces"""
+        from app.utils.model_validators import AnimalValidationRules
+        
+        errors = []
+        
+        # Usar validadores especializados
+        errors.extend(AnimalValidationRules.validate_animal_data(data))
+        
+        # Validar enums si están presentes
+        if 'sex' in data:
+            errors.extend(AnimalValidationRules.validate_sex(data['sex']))
+        
+        if 'status' in data:
+            errors.extend(AnimalValidationRules.validate_status(data['status']))
+        
+        # Validar foreign keys
+        if 'breeds_id' in data:
+            from app.utils.model_validators import ValidationRules
+            errors.extend(ValidationRules.validate_foreign_key_exists(
+                data['breeds_id'], Breeds, "raza"
+            ))
+        
+        return errors
+    
+    def to_json(self, include_relations: List[str] = None, namespace_format: bool = False) -> Dict[str, Any]:
+        """
+        Serialización JSON optimizada para namespaces.
+        
+        Args:
+            include_relations: Relaciones a incluir
+            namespace_format: Si usar formato específico para namespaces
+        """
+        if namespace_format:
+            # Formato específico para namespaces con campos renombrados
+            result = {
+                'idAnimal': self.id,
+                'sex': self.sex.value if self.sex else None,
+                'birth_date': self.birth_date.isoformat() if self.birth_date else None,
+                'weight': self.weight,
+                'record': self.record,
+                'status': self.status.value if self.status else None,
+                'breeds_id': self.breeds_id,
+                'idFather': self.idFather,
+                'idMother': self.idMother,
+            }
+            
+            # Incluir información de la raza si está disponible
+            if self.breed:
+                result['breed'] = {
+                    'id': self.breed.id,
+                    'breed': self.breed.breed,
+                    'species_id': self.breed.species_id
+                }
+            
+            # Incluir relaciones específicas si se solicitan
+            if include_relations:
+                if 'father' in include_relations and self.father:
+                    result['father'] = {
+                        'id': self.father.id,
+                        'record': self.father.record,
+                        'sex': self.father.sex.value if self.father.sex else None
+                    }
+                
+                if 'mother' in include_relations and self.mother:
+                    result['mother'] = {
+                        'id': self.mother.id,
+                        'record': self.mother.record,
+                        'sex': self.mother.sex.value if self.mother.sex else None
+                    }
+            
+            return result
+        else:
+            # Usar serialización base
+            return super().to_json(include_relations)
+    
+    @classmethod
+    def get_optimized_query(cls, include_relations: List[str] = None):
+        """Consulta optimizada con eager loading para namespaces"""
+        query = cls.query
+        
+        # Siempre incluir breed para evitar consultas N+1
+        query = query.options(joinedload(cls.breed))
+        
+        # Incluir relaciones adicionales según se solicite
+        if include_relations:
+            if 'father' in include_relations:
+                query = query.options(joinedload(cls.father))
+            if 'mother' in include_relations:
+                query = query.options(joinedload(cls.mother))
+            if 'breed.species' in include_relations:
+                query = query.options(
+                    joinedload(cls.breed).joinedload(Breeds.species)
+                )
+        
+        return query
+    
+    @classmethod
+    def get_statistics_for_namespace(cls) -> Dict[str, Any]:
+        """Estadísticas optimizadas para namespaces"""
+        stats = cls.get_statistics()
+        
+        # Agregar estadísticas específicas de animales
+        try:
+            # Estadísticas por sexo
+            sex_stats = db.session.query(
+                cls.sex, func.count(cls.sex)
+            ).group_by(cls.sex).all()
+            stats['by_sex'] = {str(sex): count for sex, count in sex_stats}
+            
+            # Estadísticas por raza (top 5)
+            breed_stats = db.session.query(
+                Breeds.breed, func.count(cls.id)
+            ).join(cls.breed).group_by(Breeds.breed).order_by(
+                func.count(cls.id).desc()
+            ).limit(5).all()
+            stats['top_breeds'] = [
+                {'breed': breed, 'count': count} 
+                for breed, count in breed_stats
+            ]
+            
+            # Promedio de peso por estado
+            if hasattr(cls, 'status'):
+                weight_stats = db.session.query(
+                    cls.status, 
+                    func.avg(cls.weight).label('avg_weight'),
+                    func.count(cls.id).label('count')
+                ).group_by(cls.status).all()
+                stats['weight_by_status'] = {
+                    str(status): {
+                        'average_weight': round(float(avg_weight), 2) if avg_weight else 0,
+                        'count': count
+                    }
+                    for status, avg_weight, count in weight_stats
+                }
+            
+        except Exception as e:
+            logger.error(f"Error calculando estadísticas de animales: {e}")
+            stats['calculation_errors'] = str(e)
+        
+        return stats
     
 
     

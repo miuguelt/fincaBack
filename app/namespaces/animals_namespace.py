@@ -11,6 +11,8 @@ from sqlalchemy.orm import joinedload
 from datetime import datetime
 import logging
 from app.utils.etag_cache import etag_cache, conditional_cache
+from app.utils.response_handler import APIResponse
+from app.utils.validators import RequestValidator
 
 # Crear el namespace
 animals_ns = Namespace(
@@ -155,30 +157,46 @@ class AnimalList(Resource):
             # Argumentos de paginación y filtros
             page = request.args.get('page', 1, type=int)
             per_page = min(request.args.get('per_page', 50, type=int), 100)
+            search = request.args.get('search')
             
-            # Usar método paginado y optimizado del modelo base
-            pagination = Animals.get_all_paginated(
+            # Construir filtros desde query parameters
+            filters = {}
+            for field in Animals._filterable_fields:
+                if field in request.args:
+                    filters[field] = request.args.get(field)
+            
+            # Usar método paginado optimizado del modelo base
+            result = Animals.get_paginated(
                 page=page,
                 per_page=per_page,
-                filters=request.args,
-                search_query=request.args.get('search'),
-                sort_by=request.args.get('sort_by', 'idAnimal'),
-                sort_order=request.args.get('sort_order', 'asc')
+                search=search,
+                filters=filters,
+                sort_by=request.args.get('sort_by', 'id'),
+                sort_order=request.args.get('sort_order', 'asc'),
+                include_relations=['breed']
             )
             
-            return {
-                'animals': [animal.to_json() for animal in pagination.items],
-                'total': pagination.total,
-                'page': pagination.page,
-                'per_page': pagination.per_page,
-                'pages': pagination.pages,
-                'has_next': pagination.has_next,
-                'has_prev': pagination.has_prev
-            }
+            # Convertir a formato namespace específico
+            animals_data = []
+            for animal in result['items']:
+                if isinstance(animal, dict):
+                    animals_data.append(animal)
+                else:
+                    animals_data.append(animal.to_json(namespace_format=True))
+            
+            return APIResponse.success({
+                'animals': animals_data,
+                'total': result['pagination']['total'],
+                'page': result['pagination']['page'],
+                'per_page': result['pagination']['per_page'],
+                'pages': result['pagination']['pages'],
+                'has_next': result['pagination']['has_next'],
+                'has_prev': result['pagination']['has_prev']
+            })
             
         except Exception as e:
             logger.error(f"Error listando animales: {str(e)}")
-            animals_ns.abort(500, f'Error interno del servidor: {str(e)}')
+            return APIResponse.error(f'Error interno del servidor: {str(e)}', 500)
     
     @animals_ns.doc(
         'create_animal',
@@ -229,76 +247,69 @@ class AnimalList(Resource):
     )
     @animals_ns.expect(animal_input_model, validate=True)
     @animals_ns.marshal_with(animal_response_model, code=201)
+    @RequestValidator.validate_json_required
     @jwt_required()
     def post(self):
         """Registrar un nuevo animal"""
         try:
-            # Verificar permisos de administrador
-            current_user = get_jwt_identity()
-            if isinstance(current_user, dict) and current_user.get('role') != 'Administrador':
-                animals_ns.abort(403, 'Se requiere rol de Administrador para registrar animales')
-            elif isinstance(current_user, str):
-                # Si current_user es string, asumir que tiene permisos (simplificado para pruebas)
-                pass
-            
             data = request.get_json()
             
-            # Usar validaciones optimizadas del modelo
+            # Validar datos usando el modelo optimizado
             validation_errors = Animals.validate_for_namespace(data)
             if validation_errors:
-                animals_ns.abort(422, {'message': 'Errores de validación', 'errors': validation_errors})
+                return APIResponse.validation_error(
+                    {'validation_errors': validation_errors},
+                    'Errores de validación en los datos del animal'
+                )
             
-            # Validar enums
-            try:
-                sex_enum = Sex(data['sex'])
-            except ValueError:
-                animals_ns.abort(400, f'Sexo inválido: {data["sex"]}. Valores permitidos: Hembra, Macho')
-            
-            # Usar el valor string directamente, el modelo se encargará de la conversión
-            status_value = data.get('status', 'Vivo')
-            
-            # Crear nuevo animal usando datos validados
-            birth_date = datetime.strptime(data['birth_date'], '%Y-%m-%d').date()
-            
-            # Crear nuevo animal usando el método genérico del modelo (valida y hace commit)
-            create_kwargs = dict(
-                sex=sex_enum,
-                birth_date=birth_date,
-                weight=data['weight'],
-                record=data['record'],
-                breeds_id=data['breeds_id'],
-                idFather=data.get('idFather'),
-                idMother=data.get('idMother')
-            )
-
-            # Incluir status como enum si se proporciona
-            if status_value:
+            # Convertir enums a strings para el modelo
+            if 'sex' in data and isinstance(data['sex'], str):
                 try:
-                    create_kwargs['status'] = AnimalStatus(status_value)
-                except Exception:
-                    # dejar que la validación del modelo se encargue de errores
-                    create_kwargs['status'] = status_value
-
-            new_animal = Animals.create(**create_kwargs)
+                    Sex(data['sex'])  # Validar que es un valor válido
+                except ValueError:
+                    return APIResponse.validation_error(
+                        {'sex': f'Valor inválido: {data["sex"]}. Valores permitidos: Hembra, Macho'},
+                        'Sexo inválido'
+                    )
             
+            if 'status' in data and isinstance(data['status'], str):
+                try:
+                    AnimalStatus(data['status'])  # Validar que es un valor válido
+                except ValueError:
+                    return APIResponse.validation_error(
+                        {'status': f'Valor inválido: {data["status"]}. Valores permitidos: Vivo, Vendido, Muerto'},
+                        'Estado inválido'
+                    )
+            
+            # Crear nuevo animal usando el método optimizado del modelo base
+            new_animal = Animals.create(**data)
+            
+            # Log de la operación
+            current_user = get_jwt_identity()
             user_id = current_user.get('identification') if isinstance(current_user, dict) else current_user
             logger.info(f"Animal registrado: {new_animal.record} por {user_id}")
-            return new_animal.to_json(), 201
+            
+            # Retornar respuesta en formato namespace
+            return APIResponse.success(
+                new_animal.to_json(namespace_format=True),
+                'Animal registrado exitosamente',
+                201
+            )
             
         except IntegrityError as e:
             db.session.rollback()
             if 'record' in str(e):
-                error_msg = f'El registro {data["record"]} ya existe'
+                error_msg = f'El registro {data.get("record", "N/A")} ya existe'
             else:
                 error_msg = 'Error de integridad en los datos'
             
             logger.warning(f"Error de integridad registrando animal: {str(e)}")
-            animals_ns.abort(409, error_msg)
+            return APIResponse.conflict_error(error_msg)
             
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error registrando animal: {str(e)}")
-            animals_ns.abort(500, f'Error interno del servidor: {str(e)}')
+            return APIResponse.error(f'Error interno del servidor: {str(e)}', 500)
 
 @animals_ns.route('/<int:animal_id>')
 class AnimalDetail(Resource):

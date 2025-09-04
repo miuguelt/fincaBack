@@ -153,11 +153,20 @@ class MedicalStatistics(Resource):
     def get(self):
         """Obtener estadísticas médicas completas"""
         try:
-            # Obtener estadísticas de todos los modelos médicos
-            treatments_stats = Treatments.get_statistics()
-            vaccinations_stats = Vaccinations.get_statistics()
-            medications_stats = Medications.get_statistics()
-            vaccines_stats = Vaccines.get_statistics()
+            # Obtener estadísticas de todos los modelos médicos usando métodos optimizados
+            treatments_stats = Treatments.get_statistics_for_namespace()
+            vaccinations_stats = Vaccinations.get_statistics_for_namespace()
+            
+            # Para modelos que no tienen el método optimizado, usar el básico
+            try:
+                medications_stats = Medications.get_statistics()
+            except AttributeError:
+                medications_stats = {'total_records': Medications.query.count()}
+            
+            try:
+                vaccines_stats = Vaccines.get_statistics()
+            except AttributeError:
+                vaccines_stats = {'total_records': Vaccines.query.count()}
             
             return APIResponse.success(
                 data={
@@ -166,10 +175,10 @@ class MedicalStatistics(Resource):
                     'medications': medications_stats,
                     'vaccines': vaccines_stats,
                     'summary': {
-                        'total_treatments': treatments_stats.get('total', 0),
-                        'total_vaccinations': vaccinations_stats.get('total', 0),
-                        'total_medications': medications_stats.get('total', 0),
-                        'total_vaccines': vaccines_stats.get('total', 0)
+                        'total_treatments': treatments_stats.get('total_records', 0),
+                        'total_vaccinations': vaccinations_stats.get('total_records', 0),
+                        'total_medications': medications_stats.get('total_records', 0),
+                        'total_vaccines': vaccines_stats.get('total_records', 0)
                     }
                 },
                 message="Estadísticas médicas obtenidas exitosamente"
@@ -233,26 +242,39 @@ class TreatmentsList(Resource):
             # Argumentos de paginación y filtros
             page = request.args.get('page', 1, type=int)
             per_page = min(request.args.get('per_page', 20, type=int), 100)
+            search = request.args.get('search')
             
-            # Usar método paginado y optimizado del modelo base
-            pagination = Treatments.get_all_paginated(
+            # Construir filtros desde query parameters
+            filters = {}
+            for field in Treatments._filterable_fields:
+                if field in request.args:
+                    filters[field] = request.args.get(field)
+            
+            # Usar método paginado optimizado del modelo base
+            result = Treatments.get_paginated(
                 page=page,
                 per_page=per_page,
-                filters=request.args,
-                search_query=request.args.get('search'),
+                search=search,
+                filters=filters,
                 sort_by=request.args.get('sort_by', 'start_date'),
-                sort_order=request.args.get('sort_order', 'desc')
+                sort_order=request.args.get('sort_order', 'desc'),
+                include_relations=['animals']
             )
             
-            # Formatear la respuesta para que sea compatible con la paginación
-            treatments_data = ResponseFormatter.format_model_list(pagination.items)
+            # Convertir a formato namespace específico
+            treatments_data = []
+            for treatment in result['items']:
+                if isinstance(treatment, dict):
+                    treatments_data.append(treatment)
+                else:
+                    treatments_data.append(treatment.to_json(namespace_format=True))
             
             return APIResponse.paginated_success(
                 data=treatments_data,
-                page=pagination.page,
-                per_page=pagination.per_page,
-                total=pagination.total,
-                message=f"Se encontraron {pagination.total} tratamientos"
+                page=result['pagination']['page'],
+                per_page=result['pagination']['per_page'],
+                total=result['pagination']['total'],
+                message=f"Se encontraron {result['pagination']['total']} tratamientos"
             )
             
         except Exception as e:

@@ -18,8 +18,10 @@ class Breeds(BaseModel):
 
     # Configuraciones del modelo base
     _searchable_fields = ['name']
-    _filterable_fields = ['species_id']
+    _filterable_fields = ['species_id', 'name']
     _sortable_fields = ['id', 'name']
+    _required_fields = ['name', 'species_id']
+    _unique_fields = [('name', 'species_id')]  # Combinación única
     
     # Índices para optimización de consultas
     __table_args__ = (
@@ -27,20 +29,127 @@ class Breeds(BaseModel):
         db.Index('idx_breeds_name', 'name'),
         db.Index('idx_breeds_name_species', 'name', 'species_id'),
     )
+    
+    def _validate_instance(self):
+        """Validaciones específicas para razas"""
+        errors = []
+        
+        # Validar nombre
+        if not self.name or not self.name.strip():
+            errors.append("El nombre de la raza es requerido")
+        elif len(self.name.strip()) < 2:
+            errors.append("El nombre de la raza debe tener al menos 2 caracteres")
+        
+        # Validar que la especie existe
+        if self.species_id:
+            from app.models.species import Species
+            if not Species.query.get(self.species_id):
+                errors.append("La especie especificada no existe")
+        
+        if errors:
+            from app.models.base_model import ValidationError
+            raise ValidationError("; ".join(errors))
+    
+    @classmethod
+    def validate_for_namespace(cls, data: Dict[str, Any]) -> List[str]:
+        """Validación específica para uso en namespaces"""
+        from app.utils.model_validators import ValidationRules
+        
+        errors = []
+        
+        # Validar nombre
+        if 'name' in data:
+            errors.extend(ValidationRules.validate_string_length(
+                data['name'], "nombre de la raza", min_length=2, max_length=255
+            ))
+        
+        # Validar que la especie existe
+        if 'species_id' in data:
+            from app.models.species import Species
+            errors.extend(ValidationRules.validate_foreign_key_exists(
+                data['species_id'], Species, "especie"
+            ))
+        
+        return errors
 
-    def to_json(self, include_relations: List[str] = None) -> Dict[str, Any]:
+    def to_json(self, include_relations: List[str] = None, namespace_format: bool = False) -> Dict[str, Any]:
         """
-        Serializa el objeto Breed a un diccionario JSON, permitiendo la inclusión
-        selectiva de relaciones para optimizar la carga de datos.
-
+        Serialización JSON optimizada para namespaces.
+        
         Args:
-            include_relations (List[str], optional): Lista de nombres de relaciones
-                a incluir en la serialización. Defaults to None.
-
-        Returns:
-            Dict[str, Any]: Diccionario con los datos de la raza.
+            include_relations: Relaciones a incluir
+            namespace_format: Si usar formato específico para namespaces
         """
-        return self.to_dict(include_relations=include_relations)
+        if namespace_format:
+            result = {
+                'id': self.id,
+                'breed': self.name,  # Usar 'breed' como en el namespace existente
+                'species_id': self.species_id,
+            }
+            
+            # Incluir información de la especie si está disponible
+            if self.species:
+                result['species'] = {
+                    'id': self.species.id,
+                    'name': self.species.name
+                }
+            
+            # Incluir estadísticas de animales si se solicita
+            if include_relations and 'animals_count' in include_relations:
+                result['animals_count'] = self.animals.count()
+            
+            return result
+        else:
+            # Usar serialización base
+            return super().to_json(include_relations)
+    
+    @classmethod
+    def get_optimized_query(cls, include_relations: List[str] = None):
+        """Consulta optimizada con eager loading para namespaces"""
+        query = cls.query
+        
+        # Siempre incluir species para evitar consultas N+1
+        query = query.options(joinedload(cls.species))
+        
+        return query
+    
+    @classmethod
+    def get_statistics_for_namespace(cls) -> Dict[str, Any]:
+        """Estadísticas optimizadas para namespaces"""
+        stats = cls.get_statistics()
+        
+        try:
+            # Top 5 razas con más animales
+            top_breeds = db.session.query(
+                cls.name, 
+                func.count('Animals.id').label('animal_count')
+            ).outerjoin(cls.animals).group_by(cls.name).order_by(
+                func.count('Animals.id').desc()
+            ).limit(5).all()
+            
+            stats['top_breeds_by_animals'] = [
+                {'breed': breed, 'animal_count': count}
+                for breed, count in top_breeds
+            ]
+            
+            # Distribución por especies
+            species_distribution = db.session.query(
+                'Species.name',
+                func.count(cls.id).label('breed_count')
+            ).join(cls.species).group_by('Species.name').all()
+            
+            stats['breeds_by_species'] = [
+                {'species': species, 'breed_count': count}
+                for species, count in species_distribution
+            ]
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error calculando estadísticas de razas: {e}")
+            stats['calculation_errors'] = str(e)
+        
+        return stats
     
     def __repr__(self):
         """Representación string del modelo"""

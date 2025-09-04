@@ -71,8 +71,118 @@ class Treatments(BaseModel, TimestampMixin):
         if not self.dosis or not self.dosis.strip():
             errors.append("La dosis no puede estar vacía")
         
+        # Validar que el animal existe
+        if self.animal_id and not Animals.exists(self.animal_id):
+            errors.append("El animal especificado no existe")
+        
         if errors:
             raise ValidationError("; ".join(errors))
+    
+    @classmethod
+    def validate_for_namespace(cls, data: Dict[str, Any]) -> List[str]:
+        """Validación específica para uso en namespaces"""
+        from app.utils.model_validators import MedicalValidationRules, ValidationRules
+        
+        errors = []
+        
+        # Usar validadores especializados para tratamientos
+        errors.extend(MedicalValidationRules.validate_treatment_data(data))
+        
+        # Validar que el animal existe
+        if 'animal_id' in data:
+            errors.extend(ValidationRules.validate_foreign_key_exists(
+                data['animal_id'], Animals, "animal"
+            ))
+        
+        return errors
+    
+    def to_json(self, include_relations: List[str] = None, namespace_format: bool = False) -> Dict[str, Any]:
+        """
+        Serialización JSON optimizada para namespaces.
+        
+        Args:
+            include_relations: Relaciones a incluir
+            namespace_format: Si usar formato específico para namespaces
+        """
+        if namespace_format:
+            result = {
+                'id': self.id,
+                'start_date': self.start_date.isoformat() if self.start_date else None,
+                'end_date': self.end_date.isoformat() if self.end_date else None,
+                'description': self.description,
+                'frequency': self.frequency,
+                'observations': self.observations,
+                'dosis': self.dosis,
+                'animal_id': self.animal_id,
+                'created_at': self.created_at.isoformat() if self.created_at else None,
+                'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+                'is_active': self.end_date is None,  # Tratamiento activo si no tiene fecha de fin
+            }
+            
+            # Incluir información básica del animal si está disponible
+            if self.animals:
+                result['animal'] = {
+                    'id': self.animals.id,
+                    'record': self.animals.record,
+                    'sex': self.animals.sex.value if self.animals.sex else None,
+                    'weight': self.animals.weight
+                }
+            
+            return result
+        else:
+            # Usar serialización base
+            return super().to_json(include_relations)
+    
+    @classmethod
+    def get_optimized_query(cls, include_relations: List[str] = None):
+        """Consulta optimizada con eager loading para namespaces"""
+        query = cls.query
+        
+        # Siempre incluir animal básico para evitar consultas N+1
+        query = query.options(joinedload(cls.animals))
+        
+        # Incluir relaciones adicionales según se solicite
+        if include_relations:
+            if 'animal.breed' in include_relations:
+                query = query.options(
+                    joinedload(cls.animals).joinedload(Animals.breed)
+                )
+        
+        return query
+    
+    @classmethod
+    def get_statistics_for_namespace(cls) -> Dict[str, Any]:
+        """Estadísticas optimizadas para namespaces"""
+        stats = cls.get_statistics()
+        
+        try:
+            # Tratamientos activos vs completados
+            active_count = cls.query.filter(cls.end_date.is_(None)).count()
+            completed_count = cls.query.filter(cls.end_date.isnot(None)).count()
+            
+            stats['treatment_status'] = {
+                'active': active_count,
+                'completed': completed_count,
+                'total': active_count + completed_count
+            }
+            
+            # Frecuencias más comunes
+            freq_stats = db.session.query(
+                cls.frequency, func.count(cls.frequency)
+            ).group_by(cls.frequency).order_by(
+                func.count(cls.frequency).desc()
+            ).limit(5).all()
+            
+            stats['common_frequencies'] = [
+                {'frequency': freq, 'count': count}
+                for freq, count in freq_stats
+            ]
+            
+        except Exception as e:
+            logger.error(f"Error calculando estadísticas de tratamientos: {e}")
+            stats['calculation_errors'] = str(e)
+        
+        return stats
     
     # ====================================================================
     # MÉTODOS CRUD ESPECÍFICOS
